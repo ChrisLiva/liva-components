@@ -300,8 +300,9 @@ installed file.
 
 `styles.css` carries the `lc-` accent block for the dev app; `registry.json`
 carries the same CSS in `feedback-button`'s `css` field, which is what a
-consumer gets on `shadcn add`. Edit the two together — nothing checks that
-they agree, and a drifted `css` field installs stale utilities.
+consumer gets on `shadcn add`. Edit the two together — `styles-sync.test.ts`
+parses the block out of the stylesheet and fails on any drift from the `css`
+field, so a stale copy can't ship.
 
 ### Commands
 

@@ -131,9 +131,8 @@
 
 /*
  * lc- accent frame system (registration, utilities, fallbacks below). This
- * block is mirrored in registry.json's "css" field so it ships on
- * `shadcn add` — the two copies must be edited together, or a consumer
- * installs a stale version of these utilities.
+ * block is mirrored in registry.json's "css" field so it ships on `shadcn add`;
+ * styles-sync.test.ts holds the two copies in step.
  */
 
 /*

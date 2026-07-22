@@ -90,7 +90,7 @@
     }
   },
   "meta": {
-    "cssSyncedWith": "styles.css — the `lc-` accent block there is the same CSS as the `css` field below, one authored for the dev app and one shipped on `shadcn add`. Edit the two together, or a consumer installs a stale version of these utilities."
+    "cssSyncedWith": "styles.css — same `lc-` accent block; kept in step by styles-sync.test.ts."
   },
   "type": "registry:component"
 }
