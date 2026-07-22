@@ -14,8 +14,11 @@ const EXCLUDED = '[data-capture-hide],[data-slot="dialog-overlay"]';
  */
 
 // Captures the current viewport to PNG bytes via `modern-screenshot`, for
-// attaching a visual to a bug/feedback report without a getDisplayMedia
-// permission prompt.
+// attaching a visual to a bug/feedback report. The page is re-rendered into an
+// off-screen SVG <foreignObject> and rasterized — no getDisplayMedia, so there
+// is no picker, no permission prompt, and the feedback modal never has to close
+// or blink. The browser draws the clone itself, so oklch(), color-mix() and the
+// accent bloom come out as authored.
 //
 // Expected to change: MAX_SCALE (how much retina headroom to pay for in
 // bytes) and the `domToBlob` options — width/height/type and the `fetch`
@@ -29,12 +32,6 @@ const EXCLUDED = '[data-capture-hide],[data-slot="dialog-overlay"]';
 // is expected to mark its own popup and backdrop with those, and a test pins
 // exactly this selector. Renaming either marker here without updating the
 // dialog component (or vice versa) makes the dialog capture itself.
-
-// Viewport capture for feedback reports. The page is re-rendered into an
-// off-screen SVG <foreignObject> and rasterized — no getDisplayMedia, so there
-// is no picker, no permission prompt, and the feedback modal never has to close
-// or blink. The browser draws the clone itself, so oklch(), color-mix() and the
-// accent bloom come out as authored.
 
 /** True for nodes that belong in the shot — the `filter` modern-screenshot calls. */
 export function includeInCapture(node: Node): boolean {

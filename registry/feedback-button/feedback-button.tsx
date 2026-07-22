@@ -61,9 +61,9 @@ import { cn } from "@/lib/utils";
 // ── The send pipeline ────────────────────────────────────────────────────────
 
 // The send pipeline behind the feedback dialog: one hook that owns the
-// compose → sending → sent progression, the progress bar's percentage, the
-// stage label, and the error surface. It holds no markup, so the dialog above
-// it can be restyled or rebuilt without disturbing any of this.
+// compose → sending → sent progression and everything the bar under it renders
+// from. It holds no markup, so the dialog can be restyled or rebuilt without
+// disturbing any of this.
 //
 // Expected to change: the pacing constants below (trickle interval, ceiling,
 // how far a progress() call jumps, how long 100% is held), and the shape of

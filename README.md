@@ -76,7 +76,7 @@ placeholders, so they follow whatever `components.json` says — including a
 
 | Item | Files | Lands at |
 | --- | --- | --- |
-| `feedback-button` | `feedback-button.tsx`, `feedback-progress.tsx`, `feedback-defaults.ts`, `feedback-button.test.tsx`, `feedback-button.dialog.test.tsx` | `<components>/feedback/` |
+| `feedback-button` | `feedback-button.tsx`, `feedback-progress.tsx`, `feedback-defaults.ts`, `feedback-button.test.tsx`, `feedback-button.dialog.test.tsx`, `feedback-button.dictation.test.tsx` | `<components>/feedback/` |
 | `screenshot-capture` | `capture.ts`, `capture.test.ts` | `<lib>/feedback/` |
 | `diagnostics` | `diagnostics.ts`, `diagnostics.test.ts` | `<lib>/feedback/` |
 | `scrub` | `scrub.ts`, `scrub.test.ts` | `<lib>/feedback/` |
@@ -88,7 +88,7 @@ with the standard shadcn `@/` alias.
 The test files ship unconditionally — `shadcn add` has no way to make a file
 conditional on a dev dependency being present. Until the consumer installs
 `vitest`, `tsc` will report `Cannot find module 'vitest'` for each vendored
-test file; `feedback-button`'s two also want `@testing-library/react`,
+test file; `feedback-button`'s three also want `@testing-library/react`,
 `@testing-library/user-event` and a `jsdom` environment.
 
 `feedback-button` also carries a `css` field, so `shadcn add` writes the `lc-`
@@ -226,14 +226,95 @@ button labels and `aria-label`s, where a node buys nothing.
 not here — it patches console and window error hooks so the ring buffer is
 already full by the time a report is filed.
 
+### Dictation
+
+`dictate` is a hole rather than a feature: supplying a function puts a
+microphone button in the message field, and omitting one leaves the dialog
+exactly as it was — no button and no dictation code path. The component ships
+no engine and no model, and depends on nothing to provide one, because none of
+the three real options is right for everyone: the browser's Web Speech API is
+Chrome/Edge/Safari only and transcribes on Google's servers in Chrome, a local
+Whisper or Moonshine build is a ~40 MB download landing on the first press, and
+a transcription service needs a key and an endpoint. A feedback widget has no
+business making that call on a host application's behalf.
+
+```tsx
+import {
+  type DictateFn,
+  FeedbackButton,
+} from "@/components/feedback/feedback-button";
+
+const dictate: DictateFn = (emit, fail, ended) => {
+  const Recognition =
+    window.SpeechRecognition ?? window.webkitSpeechRecognition;
+  const recognition = new Recognition();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.onresult = (event) => {
+    const result = event.results[event.results.length - 1];
+    emit(result[0].transcript, result.isFinal);
+  };
+  // Narrow on purpose: this event also fires for routine things like
+  // `no-speech`, which is not a failure and must not end the run.
+  recognition.onerror = (event) => {
+    if (event.error === "not-allowed") fail(new Error("Microphone blocked."));
+  };
+  // It stops itself after a stretch of silence; without this the button would
+  // go on saying "Listening…".
+  recognition.onend = () => ended();
+  recognition.start();
+  return () => recognition.stop();
+};
+
+// Feature-detect in your own code, not in the dialog: an unsupported browser
+// simply gets no `dictate`, and therefore no microphone button.
+<FeedbackButton
+  onSubmit={submit}
+  dictate={supportsSpeech ? dictate : undefined}
+/>;
+```
+
+A `DictateFn` starts capturing speech and resolves to the function that stops
+it. It runs on the reporter's press, so that is the moment to prompt for
+microphone access or fetch a model; rejecting surfaces the rejection's message
+on the form and returns the button to idle, so a permission refused *there*
+needs no special handling.
+
+- `emit(text, false)` is provisional — the phrase as the engine currently hears
+  it. Each provisional emit *replaces* the last, so an engine that revises
+  itself mid-phrase just emits again. `emit(text, true)` commits: the text is
+  appended to the message for good, and later emits build on top of it. An
+  engine with no interim story emits finals only and loses nothing but the live
+  preview.
+- `fail(reason)` ends the run and puts the reason on the form. This, not a
+  rejection, is where a denied microphone usually arrives — the browser's own
+  engine starts cleanly on a blocked microphone and reports the refusal moments
+  later, on an error event, by which time there is nothing left to reject.
+- `ended()` is the quiet one: the engine stopped of its own accord and nothing
+  went wrong, so the button returns to idle with nothing to tell the reporter.
+  Engines do this on their own schedule, and one that stops without saying so
+  leaves the button reading "Listening…" over a microphone that is off.
+
+Both `fail` and `ended` keep every word already transcribed, and both are
+ignored once anything else has ended the run — so an engine may report its end
+from inside its own stopper without swallowing the tail it is flushing there.
+That stopper is called exactly once: on the second press, when the dialog
+closes, on unmount, or when the engine reports its own end. Words emitted while
+it drains still land, so a chunked transcriber can flush from inside `stop`.
+
+The reporter may type into the field mid-run; what they wrote becomes the base
+the transcript continues from rather than being rebuilt over.
+
 ### Styling hooks
 
 Every node the dialog owns carries a `data-slot`, so a consumer's own
 stylesheet can target it from outside the vendored file:
 
 `feedback-trigger`, `feedback-content`, `feedback-kinds`, `feedback-textarea`,
-`feedback-capture`, `feedback-error`, `feedback-progress`, `feedback-footer`,
-`feedback-receipt`, `feedback-sent`.
+`feedback-dictate`, `feedback-capture`, `feedback-error`, `feedback-progress`,
+`feedback-footer`, `feedback-receipt`, `feedback-sent`.
+
+`feedback-dictate` is present only when `dictate` is supplied.
 
 Two more markers are behavioral rather than decorative:
 `data-capture-hide` on the dialog popup is how `capture.ts` leaves the
