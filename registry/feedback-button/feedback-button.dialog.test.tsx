@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FeedbackButton } from "@/components/feedback/feedback-button";
-import { captureViewport } from "@/lib/feedback/capture";
+import { captureViewport, includeInCapture } from "@/lib/feedback/capture";
 
 // Component-level tests for the dialog. The pipeline's own behaviour — phases,
 // the bar, retries, idempotency — is pinned in feedback-button.test.tsx
@@ -12,12 +12,15 @@ import { captureViewport } from "@/lib/feedback/capture";
 // every comment above a file's first import, so a header note never reaches a
 // consumer.)
 
-vi.mock("@/lib/feedback/capture", () => ({
+vi.mock("@/lib/feedback/capture", async (importActual) => ({
+	...(await importActual<typeof import("@/lib/feedback/capture")>()),
 	captureViewport: vi.fn(),
 	// The real one waits two frames; resolving straight away keeps the tests off
 	// the frame clock. That an auto-capture is deferred at all is asserted
 	// separately, against the real afterPaint, in capture.test.ts.
 	afterPaint: () => Promise.resolve(),
+	// includeInCapture is kept real (importActual, above): the capture-hide
+	// contract test below asserts the dialog is excluded by the actual predicate.
 }));
 
 const captureMock = vi.mocked(captureViewport);
@@ -63,6 +66,18 @@ describe("FeedbackButton", () => {
 		expect(dialog.style.getPropertyValue("--lc-accent-gradient")).toBe(
 			"linear-gradient(135deg, var(--lc-accent), var(--lc-accent))",
 		);
+	});
+
+	it("marks its own popup so the capture predicate leaves it out", async () => {
+		const user = userEvent.setup();
+		render(<FeedbackButton onSubmit={onSubmit} />);
+
+		const dialog = await open(user);
+		// The contract between this component and the capture module: the popup
+		// carries data-capture-hide, and includeInCapture reads exactly that
+		// marker. Asserting against the real predicate means renaming the marker
+		// on either side — the attribute here or the selector there — fails here.
+		expect(includeInCapture(dialog)).toBe(false);
 	});
 
 	it("hides the toggle when one kind is offered and still files under it", async () => {
