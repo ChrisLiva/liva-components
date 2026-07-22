@@ -99,11 +99,6 @@
           "path": "registry/feedback-button/feedback-button.dialog.test.tsx",
           "type": "registry:component",
           "target": "@components/feedback/feedback-button.dialog.test.tsx"
-        },
-        {
-          "path": "registry/feedback-button/feedback-button.dictation.test.tsx",
-          "type": "registry:component",
-          "target": "@components/feedback/feedback-button.dictation.test.tsx"
         }
       ],
       "meta": {
