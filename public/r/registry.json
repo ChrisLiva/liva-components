@@ -1,0 +1,154 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry.json",
+  "name": "liva-components",
+  "homepage": "liva-components (local registry — not hosted)",
+  "items": [
+    {
+      "name": "scrub",
+      "type": "registry:lib",
+      "title": "Scrub",
+      "description": "Deep-scrubs a value tree, dropping credential-named keys and redacting JWT-shaped strings before it leaves the browser.",
+      "files": [
+        {
+          "path": "registry/scrub/scrub.ts",
+          "type": "registry:lib",
+          "target": "@lib/feedback/scrub.ts"
+        },
+        {
+          "path": "registry/scrub/scrub.test.ts",
+          "type": "registry:lib",
+          "target": "@lib/feedback/scrub.test.ts"
+        }
+      ]
+    },
+    {
+      "name": "screenshot-capture",
+      "type": "registry:lib",
+      "title": "Screenshot Capture",
+      "description": "Rasterizes the visible viewport to PNG bytes with modern-screenshot, skipping any node marked data-capture-hide.",
+      "dependencies": [
+        "modern-screenshot"
+      ],
+      "files": [
+        {
+          "path": "registry/screenshot-capture/capture.ts",
+          "type": "registry:lib",
+          "target": "@lib/feedback/capture.ts"
+        },
+        {
+          "path": "registry/screenshot-capture/capture.test.ts",
+          "type": "registry:lib",
+          "target": "@lib/feedback/capture.test.ts"
+        }
+      ]
+    },
+    {
+      "name": "diagnostics",
+      "type": "registry:lib",
+      "title": "Diagnostics",
+      "description": "Bounded ring buffer of console/error events plus a manifest assembler that folds them together with page facts and a caller-supplied bag.",
+      "files": [
+        {
+          "path": "registry/diagnostics/diagnostics.ts",
+          "type": "registry:lib",
+          "target": "@lib/feedback/diagnostics.ts"
+        },
+        {
+          "path": "registry/diagnostics/diagnostics.test.ts",
+          "type": "registry:lib",
+          "target": "@lib/feedback/diagnostics.test.ts"
+        }
+      ]
+    },
+    {
+      "name": "feedback-button",
+      "type": "registry:component",
+      "title": "Feedback Button",
+      "description": "A floating trigger, a compose dialog with report kinds and an optional screenshot, a staged send with a progress bar, and a confirmation.",
+      "dependencies": [
+        "lucide-react"
+      ],
+      "registryDependencies": [
+        "button",
+        "dialog",
+        "textarea",
+        "toggle-group"
+      ],
+      "files": [
+        {
+          "path": "registry/feedback-button/feedback-button.tsx",
+          "type": "registry:component",
+          "target": "@components/feedback/feedback-button.tsx"
+        },
+        {
+          "path": "registry/feedback-button/feedback-progress.tsx",
+          "type": "registry:component",
+          "target": "@components/feedback/feedback-progress.tsx"
+        },
+        {
+          "path": "registry/feedback-button/feedback-defaults.ts",
+          "type": "registry:component",
+          "target": "@components/feedback/feedback-defaults.ts"
+        },
+        {
+          "path": "registry/feedback-button/feedback-button.test.tsx",
+          "type": "registry:component",
+          "target": "@components/feedback/feedback-button.test.tsx"
+        },
+        {
+          "path": "registry/feedback-button/feedback-button.dialog.test.tsx",
+          "type": "registry:component",
+          "target": "@components/feedback/feedback-button.dialog.test.tsx"
+        }
+      ],
+      "meta": {
+        "cssSyncedWith": "styles.css — the `lc-` accent block there is the same CSS as the `css` field below, one authored for the dev app and one shipped on `shadcn add`. Edit the two together, or a consumer installs a stale version of these utilities."
+      },
+      "css": {
+        "@property --lc-accent": {
+          "syntax": "\"<color>\"",
+          "inherits": "true",
+          "initial-value": "oklch(0.65 0.004 290)"
+        },
+        "@utility lc-accent-frame": {
+          "&::after": {
+            "content": "\"\"",
+            "position": "absolute",
+            "inset": "-40px",
+            "padding": "40px",
+            "border-radius": "calc(var(--lc-frame-radius, 1rem) + 40px)",
+            "background": "var(--lc-accent-gradient)",
+            "background-origin": "content-box",
+            "background-clip": "content-box",
+            "mask": "linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)",
+            "mask-composite": "exclude",
+            "filter": "blur(13px)",
+            "opacity": "0.5",
+            "pointer-events": "none"
+          },
+          "&::before": {
+            "content": "\"\"",
+            "position": "absolute",
+            "inset": "0",
+            "border-radius": "inherit",
+            "padding": "1.5px",
+            "background": "var(--lc-accent-gradient)",
+            "mask": "linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)",
+            "mask-composite": "exclude",
+            "pointer-events": "none"
+          }
+        },
+        "@utility lc-accent-shift": {
+          "transition": "--lc-accent 400ms ease-out",
+          "@media (prefers-reduced-motion: reduce)": {
+            "transition": "none"
+          }
+        },
+        ":root": {
+          "--lc-accent": "var(--foreground)",
+          "--lc-accent-gradient": "linear-gradient(135deg, var(--lc-accent), var(--lc-accent))"
+        }
+      }
+    }
+  ]
+}

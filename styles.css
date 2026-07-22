@@ -1,0 +1,278 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/inter";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    --font-heading: var(--font-sans);
+    --font-sans: 'Inter Variable', sans-serif;
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.147 0.004 49.25);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.147 0.004 49.25);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.147 0.004 49.25);
+    --primary: oklch(0.216 0.006 56.043);
+    --primary-foreground: oklch(0.985 0.001 106.423);
+    --secondary: oklch(0.97 0.001 106.424);
+    --secondary-foreground: oklch(0.216 0.006 56.043);
+    --muted: oklch(0.97 0.001 106.424);
+    --muted-foreground: oklch(0.553 0.013 58.071);
+    --accent: oklch(0.97 0.001 106.424);
+    --accent-foreground: oklch(0.216 0.006 56.043);
+    --destructive: oklch(0.577 0.245 27.325);
+    --border: oklch(0.923 0.003 48.717);
+    --input: oklch(0.923 0.003 48.717);
+    --ring: oklch(0.709 0.01 56.259);
+    --chart-1: oklch(0.869 0.005 56.366);
+    --chart-2: oklch(0.553 0.013 58.071);
+    --chart-3: oklch(0.444 0.011 73.639);
+    --chart-4: oklch(0.374 0.01 67.558);
+    --chart-5: oklch(0.268 0.007 34.298);
+    --radius: 0.625rem;
+    --sidebar: oklch(0.985 0.001 106.423);
+    --sidebar-foreground: oklch(0.147 0.004 49.25);
+    --sidebar-primary: oklch(0.216 0.006 56.043);
+    --sidebar-primary-foreground: oklch(0.985 0.001 106.423);
+    --sidebar-accent: oklch(0.97 0.001 106.424);
+    --sidebar-accent-foreground: oklch(0.216 0.006 56.043);
+    --sidebar-border: oklch(0.923 0.003 48.717);
+    --sidebar-ring: oklch(0.709 0.01 56.259);
+}
+
+.dark {
+    --background: oklch(0.147 0.004 49.25);
+    --foreground: oklch(0.985 0.001 106.423);
+    --card: oklch(0.216 0.006 56.043);
+    --card-foreground: oklch(0.985 0.001 106.423);
+    --popover: oklch(0.216 0.006 56.043);
+    --popover-foreground: oklch(0.985 0.001 106.423);
+    --primary: oklch(0.923 0.003 48.717);
+    --primary-foreground: oklch(0.216 0.006 56.043);
+    --secondary: oklch(0.268 0.007 34.298);
+    --secondary-foreground: oklch(0.985 0.001 106.423);
+    --muted: oklch(0.268 0.007 34.298);
+    --muted-foreground: oklch(0.709 0.01 56.259);
+    --accent: oklch(0.268 0.007 34.298);
+    --accent-foreground: oklch(0.985 0.001 106.423);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.553 0.013 58.071);
+    --chart-1: oklch(0.869 0.005 56.366);
+    --chart-2: oklch(0.553 0.013 58.071);
+    --chart-3: oklch(0.444 0.011 73.639);
+    --chart-4: oklch(0.374 0.01 67.558);
+    --chart-5: oklch(0.268 0.007 34.298);
+    --sidebar: oklch(0.216 0.006 56.043);
+    --sidebar-foreground: oklch(0.985 0.001 106.423);
+    --sidebar-primary: oklch(0.488 0.243 264.376);
+    --sidebar-primary-foreground: oklch(0.985 0.001 106.423);
+    --sidebar-accent: oklch(0.268 0.007 34.298);
+    --sidebar-accent-foreground: oklch(0.985 0.001 106.423);
+    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-ring: oklch(0.553 0.013 58.071);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    }
+  body {
+    @apply bg-background text-foreground;
+    }
+  html {
+    @apply font-sans;
+    }
+}
+
+/*
+ * lc- accent frame system (registration, utilities, fallbacks below). This
+ * block is mirrored in registry.json's "css" field so it ships on
+ * `shadcn add` — the two copies must be edited together, or a consumer
+ * installs a stale version of these utilities.
+ */
+
+/*
+ * Registered so --lc-accent can be *interpolated* rather than just swapped.
+ * An unregistered custom property is an opaque token to the animation
+ * engine: transitioning it jumps straight from the old value to the new one,
+ * with no in-between frames. Declaring `syntax: "<color>"` tells the engine
+ * this is a real color it knows how to blend, so it produces intermediate
+ * frames — and because `var()` substitution is re-resolved on every one of
+ * those frames, any gradient built from `var(--lc-accent)` rides along with
+ * it, so a ring using that gradient visibly travels between colors instead
+ * of cutting from one straight to the other.
+ *
+ * Substitute the bare var wherever this is consumed, never a `color-mix()`
+ * wrapped around it — a `color-mix()` around an animating property is
+ * computed once and snaps to its final value rather than tweening frame by
+ * frame with it.
+ *
+ * The initial value below is a neutral, low-chroma gray. It is only ever
+ * visible if something renders the frame before any consumer has set
+ * --lc-accent, so it doesn't need to match a brand color — only to be a
+ * valid, unobtrusive placeholder.
+ */
+@property --lc-accent {
+    syntax: "<color>";
+    inherits: true;
+    initial-value: oklch(0.65 0.004 290);
+}
+
+/*
+ * The masked hairline ring (`::before`) plus its blurred bloom (`::after`)
+ * that frame a dialog in its current accent color.
+ *
+ * Both live on pseudo-elements rather than on the dialog element itself, and
+ * that split is load-bearing, not stylistic:
+ *
+ * - A gradient can't ride on `box-shadow` — it only accepts a solid color —
+ *   so the ring has to be painted some other way. A masked pseudo-element is
+ *   that way: `padding` sets the ring's thickness, and
+ *   `mask-composite: exclude` punches out the middle, leaving only the
+ *   border band.
+ *
+ * - `box-shadow` and `filter` on the dialog itself are very likely already
+ *   claimed — by its own drop shadow and by its open/close animation. Two
+ *   rules that both set the same property don't blend; the winner takes the
+ *   *entire* property, so a `filter: blur(...)` added directly to the
+ *   dialog would silently replace its animation instead of layering with it.
+ *   A separate pseudo-element sidesteps the conflict — nothing else is
+ *   contending for its `filter`.
+ *
+ * - The bloom has to reflect the whole gradient, not just its first stop, so
+ *   it can't be a plain `box-shadow` either. Instead the pseudo-element
+ *   paints the gradient as an oversized, card-shaped rectangle, blurs the
+ *   whole thing, and then masks the dialog's own footprint back out of the
+ *   already-blurred result. Filters run *before* masking, so this removes
+ *   the blurred copy of the card's own body and leaves only the glow that
+ *   spilled past its edges — the bloom can't wash out the surface it
+ *   surrounds.
+ *
+ * - The 40px overhang is how far that spill is allowed to travel before the
+ *   pseudo-element's own mask clips it, so it must comfortably outrun the
+ *   13px blur radius (`filter: blur()`'s radius is roughly half of an
+ *   equivalent `box-shadow` blur, so 13px here lands in the same ballpark as
+ *   a 26px box-shadow blur would have).
+ */
+@utility lc-accent-frame {
+    /* No `position` here on purpose: the dialog this frames is already
+       `fixed` (or otherwise positioned), which is containing block enough
+       for these pseudo-elements. Adding `position: relative` here would
+       override that and un-center the dialog. */
+    &::after {
+        content: "";
+        position: absolute;
+        inset: -40px;
+        padding: 40px;
+        /*
+         * --lc-frame-radius is not defined here on purpose — the consuming
+         * component sets it to match whatever `border-radius` it actually
+         * applies to the dialog's own corners, so the hole punched in this
+         * bloom lines up with the card underneath. Restyle the dialog's
+         * rounding and forget to update --lc-frame-radius alongside it, and
+         * the bloom's corners will visibly drift away from the card's. The
+         * fallback below is only a reasonable default for when it's unset.
+         */
+        border-radius: calc(var(--lc-frame-radius, 1rem) + 40px);
+        background: var(--lc-accent-gradient);
+        background-origin: content-box;
+        background-clip: content-box;
+        mask:
+            linear-gradient(#000 0 0) content-box,
+            linear-gradient(#000 0 0);
+        mask-composite: exclude;
+        filter: blur(13px);
+        opacity: 0.5;
+        pointer-events: none;
+    }
+
+    &::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        padding: 1.5px;
+        background: var(--lc-accent-gradient);
+        mask:
+            linear-gradient(#000 0 0) content-box,
+            linear-gradient(#000 0 0);
+        mask-composite: exclude;
+        pointer-events: none;
+    }
+}
+
+/*
+ * Lets a change to --lc-accent travel across the ring instead of cutting.
+ * Pairs with the @property registration above, and only actually animates on
+ * a frame whose gradient substitutes the bare var(--lc-accent) — a literal
+ * color, or a color-mix() wrapping the var, resolves once and repaints at
+ * the end of the transition instead of tweening through it.
+ */
+@utility lc-accent-shift {
+    transition: --lc-accent 400ms ease-out;
+
+    @media (prefers-reduced-motion: reduce) {
+        transition: none;
+    }
+}
+
+/*
+ * Fallbacks so a frame rendered outside any subtree that sets --lc-accent
+ * shows something rather than collapsing to an invalid color. Both gradient
+ * stops substitute the bare custom property on purpose — that's what lets
+ * the ring repaint every frame of the registered property's transition,
+ * rather than resolving once to a fixed two-color gradient.
+ */
+:root {
+    --lc-accent: var(--foreground);
+    --lc-accent-gradient: linear-gradient(
+        135deg,
+        var(--lc-accent),
+        var(--lc-accent)
+    );
+}
