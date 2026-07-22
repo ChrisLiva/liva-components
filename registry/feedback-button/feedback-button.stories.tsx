@@ -8,13 +8,16 @@
 // that one prop is genuinely enough, Playground exercises the send pipeline's
 // staged progress and its failure path, AutoCapture puts real page content
 // behind the dialog so the thumbnail has something to be a picture of,
-// Diagnostics wires the manifest end to end, and RichCopy is where the copy
-// fields that take more than a string are looked at.
+// Diagnostics wires the manifest end to end, RichCopy is where the copy fields
+// that take more than a string are looked at, and Dictation carries a complete
+// Web Speech adapter — the component ships no engine, so that story is the
+// working reference for wiring one.
 
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useEffect, useState } from "react";
 
 import {
+	type DictateFn,
 	FeedbackButton,
 	type FeedbackButtonProps,
 	type ProgressFn,
@@ -321,3 +324,114 @@ function DiagnosticsDemo({ onSubmit }: Pick<FeedbackButtonProps, "onSubmit">) {
 		</div>
 	);
 }
+
+/** The slice of the Web Speech API this adapter touches, since TypeScript's DOM
+ * library does not declare it. */
+type SpeechResult = { isFinal: boolean; 0: { transcript: string } };
+type Recognition = {
+	continuous: boolean;
+	interimResults: boolean;
+	onresult: ((event: { results: SpeechResult[] }) => void) | null;
+	onerror: ((event: { error: string }) => void) | null;
+	start: () => void;
+	stop: () => void;
+};
+
+/** Whatever this browser calls the constructor, or undefined if it has none. */
+function speechRecognition(): (new () => Recognition) | undefined {
+	const scope = window as unknown as {
+		SpeechRecognition?: new () => Recognition;
+		webkitSpeechRecognition?: new () => Recognition;
+	};
+	return scope.SpeechRecognition ?? scope.webkitSpeechRecognition;
+}
+
+/**
+ * The Web Speech adapter, whole. This is the entire integration — the dialog
+ * ships no engine, so wiring one is this function and passing it as `dictate`.
+ */
+const webSpeechDictation: DictateFn = (emit, fail) => {
+	const Recognition = speechRecognition();
+	if (Recognition === undefined) throw new Error("Unavailable");
+
+	const recognition = new Recognition();
+	recognition.continuous = true;
+	recognition.interimResults = true;
+	recognition.onresult = (event) => {
+		const result = event.results[event.results.length - 1];
+		emit(result[0].transcript, result.isFinal);
+	};
+	// Where a denied microphone actually turns up: `start()` resolved fine and
+	// the refusal arrives here, too late to reject with. Throwing from an event
+	// handler reaches nobody, so it goes back through `fail` instead.
+	recognition.onerror = (event) => {
+		if (event.error === "not-allowed") fail(new Error("Microphone blocked."));
+	};
+	recognition.start();
+	return () => recognition.stop();
+};
+
+/**
+ * A scripted stand-in for browsers with no speech engine, so the interaction is
+ * still demonstrable: it dictates a fixed sentence a word at a time, provisional
+ * until each clause lands.
+ */
+const scriptedDictation: DictateFn = (emit) => {
+	const clauses = [
+		"The export button does nothing on the billing page",
+		"and the console logs a 403 every time I press it.",
+	];
+	let cancelled = false;
+
+	void (async () => {
+		for (const clause of clauses) {
+			const words = clause.split(" ");
+			for (let i = 1; i <= words.length; i += 1) {
+				await wait(180);
+				if (cancelled) return;
+				emit(words.slice(0, i).join(" "), false);
+			}
+			await wait(220);
+			if (cancelled) return;
+			emit(clause, true);
+		}
+	})();
+
+	return () => {
+		cancelled = true;
+	};
+};
+
+/**
+ * Dictation, which the dialog exposes as a hole rather than a feature: `dictate`
+ * is one function, and the engine behind it is the consumer's to choose. Both
+ * adapters above are complete and neither adds a dependency.
+ *
+ * Press the microphone in the message field. In a browser with the Web Speech
+ * API this is a real transcription; anywhere else the scripted engine plays a
+ * sentence so the provisional-then-committed behaviour is still visible. Type
+ * into the field mid-run to see an edit survive the words landing around it.
+ */
+export const Dictation: Story = {
+	args: {
+		onSubmit: async () => {
+			await wait(900);
+		},
+	},
+	render: (args) => {
+		const live = speechRecognition() !== undefined;
+		return (
+			<div className="grid min-h-svh place-items-center p-10">
+				<p className="max-w-prose text-center text-sm text-muted-foreground">
+					{live
+						? "This browser has the Web Speech API — the microphone transcribes for real."
+						: "This browser has no speech engine, so the scripted stand-in plays a sentence instead."}
+				</p>
+				<FeedbackButton
+					onSubmit={args.onSubmit}
+					dictate={live ? webSpeechDictation : scriptedDictation}
+				/>
+			</div>
+		);
+	},
+};
