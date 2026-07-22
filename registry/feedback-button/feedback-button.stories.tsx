@@ -333,6 +333,7 @@ type Recognition = {
 	interimResults: boolean;
 	onresult: ((event: { results: SpeechResult[] }) => void) | null;
 	onerror: ((event: { error: string }) => void) | null;
+	onend: (() => void) | null;
 	start: () => void;
 	stop: () => void;
 };
@@ -350,7 +351,7 @@ function speechRecognition(): (new () => Recognition) | undefined {
  * The Web Speech adapter, whole. This is the entire integration — the dialog
  * ships no engine, so wiring one is this function and passing it as `dictate`.
  */
-const webSpeechDictation: DictateFn = (emit, fail) => {
+const webSpeechDictation: DictateFn = (emit, fail, ended) => {
 	const Recognition = speechRecognition();
 	if (Recognition === undefined) throw new Error("Unavailable");
 
@@ -367,6 +368,9 @@ const webSpeechDictation: DictateFn = (emit, fail) => {
 	recognition.onerror = (event) => {
 		if (event.error === "not-allowed") fail(new Error("Microphone blocked."));
 	};
+	// It ends itself after a stretch of silence, on its own schedule rather than
+	// the reporter's; without this the button would go on claiming to listen.
+	recognition.onend = () => ended();
 	recognition.start();
 	return () => recognition.stop();
 };

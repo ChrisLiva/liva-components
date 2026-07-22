@@ -25,14 +25,28 @@ const MIC = /dictate your feedback/i;
  * still downloading — until `arrive()`, so a test can act inside the window
  * where the run is live but the engine is not.
  */
-function fakeEngine({ defer = false, refuse = false } = {}) {
+function fakeEngine({
+	defer = false,
+	refuse = false,
+	onStop,
+}: {
+	defer?: boolean;
+	refuse?: boolean;
+	/** What the engine reports from inside its own stopper, if anything. */
+	onStop?: "ends" | "fails";
+} = {}) {
 	let emit: DictationEmit | null = null;
 	let onFail: ((reason: unknown) => void) | null = null;
+	let onEnded: (() => void) | null = null;
 	let release: (() => void) | null = null;
-	const stop = vi.fn();
-	const dictate: DictateFn = (next, reportFailure) => {
+	const stop = vi.fn(() => {
+		if (onStop === "ends") onEnded?.();
+		if (onStop === "fails") onFail?.(new Error("Torn down."));
+	});
+	const dictate: DictateFn = (next, reportFailure, reportEnd) => {
 		emit = next;
 		onFail = reportFailure;
+		onEnded = reportEnd;
 		// Refusing *after* taking the callbacks, which is the shape that matters:
 		// an engine can hold `emit` and still fail to come up.
 		if (refuse) {
@@ -57,6 +71,12 @@ function fakeEngine({ defer = false, refuse = false } = {}) {
 			if (onFail === null) throw new Error("engine was never started");
 			const report = onFail;
 			act(() => report(reason));
+		},
+		/** Stop of the engine's own accord, the way a silence timeout would. */
+		end() {
+			if (onEnded === null) throw new Error("engine was never started");
+			const report = onEnded;
+			act(() => report());
 		},
 		/** Let a deferred start finish coming up. */
 		async arrive() {
@@ -332,6 +352,64 @@ describe("FeedbackButton dictation", () => {
 		// words has no claim on the field.
 		engine.say("Straggler.", true);
 		expect(text()).toBe("The export button");
+	});
+
+	it("returns to idle, quietly, when the engine stops of its own accord", async () => {
+		const user = userEvent.setup();
+		const engine = fakeEngine();
+		render(<FeedbackButton onSubmit={onSubmit} dictate={engine.dictate} />);
+
+		await open(user);
+		await user.click(screen.getByRole("button", { name: MIC }));
+		await waitFor(() => expect(engine.started).toBe(true));
+		engine.say("The export button does nothing.", true);
+
+		// A silence timeout, which is the browser engine's own habit. Nothing
+		// went wrong, so there is nothing to tell the reporter — but the button
+		// must stop claiming to listen.
+		engine.end();
+
+		await waitFor(() => expect(pressed()).toBe("false"));
+		expect(screen.queryByRole("alert")).toBeNull();
+		expect(text()).toBe("The export button does nothing.");
+		expect(engine.stop).toHaveBeenCalledTimes(1);
+
+		// And it is over: a straggler from the ended run has no claim on the field.
+		engine.say("Straggler.", true);
+		expect(text()).toBe("The export button does nothing.");
+	});
+
+	it("still drains an engine that reports its end from inside its stopper", async () => {
+		const user = userEvent.setup();
+		const engine = fakeEngine({ onStop: "ends" });
+		render(<FeedbackButton onSubmit={onSubmit} dictate={engine.dictate} />);
+
+		await open(user);
+		await user.click(screen.getByRole("button", { name: MIC }));
+		await waitFor(() => expect(engine.started).toBe(true));
+		engine.say("half a", false);
+		await user.click(screen.getByRole("button", { name: MIC }));
+
+		// The stopper fired `ended`, as a real engine's teardown does. The
+		// reporter stopped this run themselves and is still owed its tail.
+		engine.say("Half a sentence.", true);
+		expect(text()).toBe("Half a sentence.");
+	});
+
+	it("keeps a teardown failure off a form the reporter already left", async () => {
+		const user = userEvent.setup();
+		const engine = fakeEngine({ onStop: "fails" });
+		render(<FeedbackButton onSubmit={onSubmit} dictate={engine.dictate} />);
+
+		await open(user);
+		await user.click(screen.getByRole("button", { name: MIC }));
+		await waitFor(() => expect(engine.started).toBe(true));
+
+		// The engine throws on the way down, from inside the stopper the
+		// reporter's own press just called. They ended this run deliberately;
+		// its teardown is not their problem.
+		await user.click(screen.getByRole("button", { name: MIC }));
+		expect(screen.queryByRole("alert")).toBeNull();
 	});
 
 	it("ignores a failure from a run the reporter already ended", async () => {

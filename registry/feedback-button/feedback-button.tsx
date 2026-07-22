@@ -426,23 +426,33 @@ export type DictationEmit = (text: string, final: boolean) => void;
  * form and returns the button to idle, so a permission refused *here* needs no
  * special handling — just let it throw.
  *
- * Most failures don't happen here, though. The browser's own engine starts
+ * Most endings don't happen here, though, and the other two are what `fail` and
+ * `ended` are for. Both return the button to idle and keep every word already
+ * transcribed; they differ only in whether the reporter is told why.
+ *
+ * `fail(reason)` puts the reason on the form. The browser's own engine starts
  * cleanly on a blocked microphone and reports the refusal moments later, on an
- * error event, by which time nothing is left to reject. That is what `fail` is
- * for: call it with a reason and the run ends exactly as a refused start does —
- * button back to idle, reason on the form — while the words already transcribed
- * stay in the field. An engine that fails without saying so leaves the button
- * reading "Listening…" over a microphone that is no longer on.
+ * error event, by which time nothing is left to reject — so this, not a
+ * rejection, is where a denied permission usually arrives.
+ *
+ * `ended()` is the quiet one: the engine stopped of its own accord and nothing
+ * went wrong. Speech engines do this on their own schedule — the browser's ends
+ * itself after a stretch of silence — and an engine that stops without saying so
+ * leaves the button reading "Listening…" over a microphone that is no longer on.
+ *
+ * Both are ignored once anything else has ended the run, so an engine may
+ * report its end from inside its own `stop` without swallowing the tail it is
+ * flushing there.
  *
  * The returned stopper is called exactly once: on the second press, when the
- * dialog closes, on unmount, or when `fail` ends the run. Words emitted while
- * the engine drains still land, so a chunked transcriber can flush its tail
- * from inside `stop`.
+ * dialog closes, on unmount, or when the engine reports its own end. Words
+ * emitted while the engine drains still land, so a chunked transcriber can
+ * flush its tail from inside `stop`.
  *
  * ```tsx
  * // The browser's own engine: no dependency, no download, no endpoint —
  * // and Chrome/Edge/Safari only, transcribing on Google's servers in Chrome.
- * const dictate: DictateFn = async (emit, fail) => {
+ * const dictate: DictateFn = async (emit, fail, ended) => {
  *   const Recognition =
  *     window.SpeechRecognition ?? window.webkitSpeechRecognition;
  *   const recognition = new Recognition();
@@ -458,6 +468,9 @@ export type DictationEmit = (text: string, final: boolean) => void;
  *   recognition.onerror = (event) => {
  *     if (event.error === "not-allowed") fail(new Error("Microphone blocked."));
  *   };
+ *   // It stops itself after a stretch of silence; without this the button
+ *   // would still say "Listening…".
+ *   recognition.onend = () => ended();
  *   recognition.start();
  *   return () => recognition.stop();
  * };
@@ -470,6 +483,7 @@ export type DictationEmit = (text: string, final: boolean) => void;
 export type DictateFn = (
 	emit: DictationEmit,
 	fail: (reason: unknown) => void,
+	ended: () => void,
 ) => (() => void) | Promise<() => void>;
 
 /** What the dialog renders a microphone button from. */
@@ -603,18 +617,23 @@ export function useDictation({
 	}, []);
 
 	/**
-	 * Take an engine's word that its run is over and it went wrong.
+	 * Take an engine's word that its run is over — because it broke, or because
+	 * it simply stopped.
 	 *
-	 * Discarded rather than drained: an engine that just reported a failure has
-	 * no tail worth waiting for, and letting a broken one keep writing costs
-	 * more than the word it would add. What it already transcribed stays — that
-	 * is in the message, and nothing here touches it.
+	 * Both are heard only while the run is current *and* live. A run the reporter
+	 * already stopped is draining on their terms: engines routinely report their
+	 * end from inside their own stopper, and that must not cut the tail short or
+	 * drop a teardown error onto a form they are finished with.
+	 *
+	 * Either way the run is discarded rather than drained — an engine that has
+	 * announced it is done has no tail left worth waiting for. What it already
+	 * transcribed stays; that is in the message, and nothing here touches it.
 	 */
-	const fail = useCallback(
-		(run: number, reason: unknown) => {
-			if (generation.current !== run) return;
+	const conclude = useCallback(
+		(run: number, error: string | null) => {
+			if (generation.current !== run || !live.current) return;
 			settle(true);
-			setError(messageFor(reason, LABELS.dictationFailed));
+			if (error !== null) setError(error);
 		},
 		[settle],
 	);
@@ -639,7 +658,8 @@ export function useDictation({
 		try {
 			const stopper = await engine(
 				(text, final) => emit(run, text, final),
-				(reason) => fail(run, reason),
+				(reason) => conclude(run, messageFor(reason, LABELS.dictationFailed)),
+				() => conclude(run, null),
 			);
 			// Stopped, closed, or restarted while the engine was still starting.
 			// Nobody is holding this stopper, so spend it here rather than leave a
@@ -660,7 +680,7 @@ export function useDictation({
 			setRecording(false);
 			setError(messageFor(reason, LABELS.dictationFailed));
 		}
-	}, [emit, fail]);
+	}, [emit, conclude]);
 
 	const toggle = useCallback(() => {
 		if (live.current) settle(false);
