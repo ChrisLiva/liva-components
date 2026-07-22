@@ -834,6 +834,12 @@ export function FeedbackButton({
 	// nothing renders from it, and it is read inside a Base UI callback.
 	const armed = useRef(false);
 	const [captureError, setCaptureError] = useState<string | null>(null);
+	// The generation guard for `capture`, the one async path left in the
+	// component: every open and every close bumps the counter, and a capture
+	// captures it at the top and drops its result if it no longer matches — so a
+	// clone that resolves after the reporter closed or reopened the dialog can't
+	// attach a screenshot of the wrong page, or an error, onto a fresh form.
+	const captureRun = useRef(0);
 
 	const pipeline = useSendPipeline({ onSubmit, collectContext, copy });
 
@@ -871,10 +877,15 @@ export function FeedbackButton({
 	 * capture over the size cap — and leaves the form as if it had never run.
 	 */
 	const capture = useCallback(async (silent: boolean) => {
+		// Captured before the await; the clone can outlive the dialog it was taken
+		// for, and a `run` that no longer matches means the reporter has moved on.
+		const run = captureRun.current;
+		const current = () => captureRun.current === run;
 		if (!silent) setCaptureError(null);
 		setCapturing(true);
 		try {
 			const bytes = await captureViewport();
+			if (!current()) return;
 			if (bytes.length > MAX_SCREENSHOT_BYTES) {
 				if (!silent) {
 					setCaptureError(
@@ -888,15 +899,18 @@ export function FeedbackButton({
 			}
 			setScreenshot(bytes);
 		} catch {
-			if (!silent) setCaptureError(LABELS.captureFailed);
+			if (current() && !silent) setCaptureError(LABELS.captureFailed);
 		} finally {
-			setCapturing(false);
+			if (current()) setCapturing(false);
 		}
 	}, []);
 
 	/** Open onto an empty form; the next send stamps a fresh report. */
 	function launch() {
 		pipeline.reset();
+		// Retires any capture still in flight from a prior open, so its result
+		// can't land on the fresh form this opens onto.
+		captureRun.current += 1;
 		setType(options[0].value);
 		setMessage("");
 		setScreenshot(null);
@@ -968,7 +982,13 @@ export function FeedbackButton({
 
 			<Dialog
 				open={open}
-				onOpenChange={setOpen}
+				onOpenChange={(next) => {
+					// Every dismissal — Escape, the overlay, the Cancel button — passes
+					// through here, so it is the one place to retire a capture still in
+					// flight before it can attach to whatever the dialog shows next.
+					if (!next) captureRun.current += 1;
+					setOpen(next);
+				}}
 				onOpenChangeComplete={onOpenComplete}
 			>
 				<DialogContent

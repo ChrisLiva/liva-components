@@ -307,6 +307,38 @@ describe("FeedbackButton", () => {
 		);
 	});
 
+	it("drops a capture that resolves onto a reopened dialog", async () => {
+		const user = userEvent.setup();
+		let deliver!: (bytes: Uint8Array) => void;
+		captureMock.mockReturnValue(
+			new Promise<Uint8Array>((resolve) => {
+				deliver = resolve;
+			}),
+		);
+		render(<FeedbackButton onSubmit={onSubmit} />);
+
+		await open(user);
+		await user.click(
+			screen.getByRole("button", { name: "Capture screenshot" }),
+		);
+		// Dismissed with the clone still in flight, then reopened onto a fresh
+		// form — and only now does the abandoned capture land. Delivering after
+		// the reopen is the point: a capture settling *before* it would be masked
+		// by launch()'s own reset, so the stale attachment only shows through when
+		// it resolves onto the form that is already back on screen.
+		await user.click(screen.getByRole("button", { name: "Cancel" }));
+		await open(user);
+		deliver(new Uint8Array(200 * 1024));
+		// Let the late capture's continuation run and commit any state it would.
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		expect(screen.queryByText(/Screenshot attached/)).toBeNull();
+		expect(screen.queryByRole("alert")).toBeNull();
+		expect(
+			screen.getByRole("button", { name: "Capture screenshot" }),
+		).not.toBeNull();
+	});
+
 	it("attaches a capture that fits and lets it be discarded", async () => {
 		const user = userEvent.setup();
 		captureMock.mockResolvedValue(new Uint8Array(200 * 1024));
