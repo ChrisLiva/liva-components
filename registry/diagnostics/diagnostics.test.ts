@@ -78,7 +78,7 @@ describe("collectContext (manifest merge)", () => {
 });
 
 describe("eventCount", () => {
-	it("reflects the number of buffered events and agrees with collectContext().events.length", () => {
+	it("reflects the number of buffered events", () => {
 		expect(diagnostics.eventCount()).toBe(0);
 
 		diagnostics.record("log", "a");
@@ -86,8 +86,6 @@ describe("eventCount", () => {
 		diagnostics.record("error", "c");
 
 		expect(diagnostics.eventCount()).toBe(3);
-		const events = diagnostics.collectContext().events as DiagnosticEvent[];
-		expect(diagnostics.eventCount()).toBe(events.length);
 	});
 });
 

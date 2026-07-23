@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { cn } from "@/lib/utils";
 
 describe("cn", () => {
-	it("drops falsy class expressions", () => {
-		expect(cn("a", false && "b")).toBe("a");
+	it("merges conflicting tailwind utilities, last one winning", () => {
+		expect(cn("px-2", "px-4")).toBe("px-4");
 	});
 });
