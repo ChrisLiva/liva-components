@@ -4,84 +4,22 @@
   "homepage": "liva-components (local registry — not hosted)",
   "items": [
     {
-      "name": "scrub",
-      "type": "registry:lib",
-      "title": "Scrub",
-      "description": "Deep-scrubs a value tree, dropping credential-named keys and redacting JWT-shaped strings before it leaves the browser.",
-      "files": [
-        {
-          "path": "registry/scrub/scrub.ts",
-          "type": "registry:lib",
-          "target": "@lib/feedback/scrub.ts"
-        },
-        {
-          "path": "registry/scrub/scrub.test.ts",
-          "type": "registry:lib",
-          "target": "@lib/feedback/scrub.test.ts"
-        }
-      ]
-    },
-    {
-      "name": "screenshot-capture",
-      "type": "registry:lib",
-      "title": "Screenshot Capture",
-      "description": "Rasterizes the visible viewport to PNG bytes with modern-screenshot, skipping any node marked data-capture-hide.",
+      "name": "feedback-base-ui",
+      "type": "registry:component",
+      "title": "Feedback Button (Base UI)",
+      "description": "A floating trigger, a compose dialog with report kinds and an optional screenshot, a staged send with a progress bar, and a confirmation — the Base UI skin over a headless core. Bundles its lib helpers; installs nothing under components/ui.",
       "dependencies": [
+        "lucide-react",
         "modern-screenshot"
       ],
       "files": [
         {
-          "path": "registry/screenshot-capture/capture.ts",
-          "type": "registry:lib",
-          "target": "@lib/feedback/capture.ts"
-        },
-        {
-          "path": "registry/screenshot-capture/capture.test.ts",
-          "type": "registry:lib",
-          "target": "@lib/feedback/capture.test.ts"
-        }
-      ]
-    },
-    {
-      "name": "diagnostics",
-      "type": "registry:lib",
-      "title": "Diagnostics",
-      "description": "Bounded ring buffer of console/error events plus a manifest assembler that folds them together with page facts and a caller-supplied bag.",
-      "files": [
-        {
-          "path": "registry/diagnostics/diagnostics.ts",
-          "type": "registry:lib",
-          "target": "@lib/feedback/diagnostics.ts"
-        },
-        {
-          "path": "registry/diagnostics/diagnostics.test.ts",
-          "type": "registry:lib",
-          "target": "@lib/feedback/diagnostics.test.ts"
-        }
-      ]
-    },
-    {
-      "name": "feedback-button",
-      "type": "registry:component",
-      "title": "Feedback Button",
-      "description": "A floating trigger, a compose dialog with report kinds and an optional screenshot, a staged send with a progress bar, and a confirmation.",
-      "dependencies": [
-        "lucide-react"
-      ],
-      "registryDependencies": [
-        "button",
-        "dialog",
-        "textarea",
-        "toggle-group"
-      ],
-      "files": [
-        {
-          "path": "registry/feedback-button/feedback-button.tsx",
+          "path": "registry/feedback-skin-base-ui/feedback-button.tsx",
           "type": "registry:component",
           "target": "@components/feedback/feedback-button.tsx"
         },
         {
-          "path": "registry/feedback-button/feedback-progress.tsx",
+          "path": "registry/feedback-skin-base-ui/feedback-progress.tsx",
           "type": "registry:component",
           "target": "@components/feedback/feedback-progress.tsx"
         },
@@ -96,14 +34,19 @@
           "target": "@lib/feedback/feedback-defaults.ts"
         },
         {
-          "path": "registry/feedback-core/use-feedback.test.ts",
+          "path": "registry/screenshot-capture/capture.ts",
           "type": "registry:lib",
-          "target": "@lib/feedback/use-feedback.test.ts"
+          "target": "@lib/feedback/capture.ts"
         },
         {
-          "path": "registry/feedback-button/feedback-button.dialog.test.tsx",
-          "type": "registry:component",
-          "target": "@components/feedback/feedback-button.dialog.test.tsx"
+          "path": "registry/diagnostics/diagnostics.ts",
+          "type": "registry:lib",
+          "target": "@lib/feedback/diagnostics.ts"
+        },
+        {
+          "path": "registry/scrub/scrub.ts",
+          "type": "registry:lib",
+          "target": "@lib/feedback/scrub.ts"
         }
       ],
       "meta": {
@@ -154,6 +97,49 @@
           "--lc-accent-gradient": "linear-gradient(135deg, var(--lc-accent), var(--lc-accent))"
         }
       }
+    },
+    {
+      "name": "feedback-antd",
+      "type": "registry:component",
+      "title": "Feedback Button (antd)",
+      "description": "The native antd skin over the same headless core: Modal, Segmented, Input.TextArea, and Progress, with no Tailwind. Bundles its lib helpers; installs nothing under components/ui.",
+      "dependencies": [
+        "antd",
+        "@ant-design/icons",
+        "modern-screenshot"
+      ],
+      "files": [
+        {
+          "path": "registry/feedback-skin-antd/feedback-button.tsx",
+          "type": "registry:component",
+          "target": "@components/feedback/feedback-button.tsx"
+        },
+        {
+          "path": "registry/feedback-core/use-feedback.ts",
+          "type": "registry:lib",
+          "target": "@lib/feedback/use-feedback.ts"
+        },
+        {
+          "path": "registry/feedback-core/feedback-defaults.ts",
+          "type": "registry:lib",
+          "target": "@lib/feedback/feedback-defaults.ts"
+        },
+        {
+          "path": "registry/screenshot-capture/capture.ts",
+          "type": "registry:lib",
+          "target": "@lib/feedback/capture.ts"
+        },
+        {
+          "path": "registry/diagnostics/diagnostics.ts",
+          "type": "registry:lib",
+          "target": "@lib/feedback/diagnostics.ts"
+        },
+        {
+          "path": "registry/scrub/scrub.ts",
+          "type": "registry:lib",
+          "target": "@lib/feedback/scrub.ts"
+        }
+      ]
     }
   ]
 }

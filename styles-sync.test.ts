@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import postcss, { type Container } from "postcss";
 import { describe, expect, it } from "vitest";
 
-// styles.css (the dev app's stylesheet) and registry.json's feedback-button
+// styles.css (the dev app's stylesheet) and registry.json's feedback-base-ui
 // `css` field carry the same `lc-` accent block — one applied here, one shipped
 // on `shadcn add`. Nothing else makes the two agree, so this parses the block
 // out of the CSS and holds it against the JSON. Both files stay hand-authored;
@@ -84,9 +84,9 @@ const registryCss = (() => {
 	const registry = JSON.parse(readFileSync("registry.json", "utf8")) as {
 		items: RegistryItem[];
 	};
-	const item = registry.items.find((i) => i.name === "feedback-button");
+	const item = registry.items.find((i) => i.name === "feedback-base-ui");
 	if (item?.css === undefined)
-		throw new Error("feedback-button has no css field in registry.json");
+		throw new Error("feedback-base-ui has no css field in registry.json");
 	return item.css;
 })();
 

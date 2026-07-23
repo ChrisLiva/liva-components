@@ -15,7 +15,7 @@
        * the authoring paths and the vendored paths the same string, so no
        * import needs rewriting on the way out.
        */
-      "@/components/feedback/*": ["./registry/feedback-button/*"],
+      "@/components/feedback/*": ["./registry/feedback-skin-base-ui/*"],
       "@/lib/feedback/use-feedback": ["./registry/feedback-core/use-feedback"],
       "@/lib/feedback/feedback-defaults": [
         "./registry/feedback-core/feedback-defaults"
