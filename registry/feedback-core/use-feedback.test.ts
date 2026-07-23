@@ -642,3 +642,73 @@ describe("useFeedback send pipeline", () => {
 		expect(result.current.phase).toBe("sending");
 	});
 });
+
+// Auto-capture arming and the silent-failure asymmetry live in the core, not a
+// skin: a skin only wires notifyOpenComplete to its dialog's open-complete
+// callback. Driving notifyOpenComplete directly pins the swallow-on-failure
+// contract without a real dialog animation (which jsdom cannot run for every
+// primitive). Each skin's own wiring is exercised where its callback fires — in
+// jsdom for base-ui, in Storybook for antd.
+describe("useFeedback auto-capture", () => {
+	/** Arm an auto-capture and run it through the open-complete callback. */
+	async function autoCapture(result: {
+		current: ReturnType<typeof useFeedback>;
+	}) {
+		act(() => {
+			result.current.launch();
+		});
+		expect(result.current.capturing).toBe(true);
+		await act(async () => {
+			result.current.notifyOpenComplete(true);
+		});
+		await settle();
+	}
+
+	it("swallows an automatic capture that throws", async () => {
+		captureMock.mockRejectedValue(new Error("tainted canvas"));
+		const { result } = renderHook(() =>
+			useFeedback({
+				onSubmit: vi.fn().mockResolvedValue(undefined),
+				autoCapture: true,
+			}),
+		);
+
+		await autoCapture(result);
+
+		expect(result.current.error).toBeNull();
+		expect(result.current.screenshot).toBeNull();
+		expect(result.current.capturing).toBe(false);
+	});
+
+	it("swallows an automatic capture that is over the size cap", async () => {
+		captureMock.mockResolvedValue(new Uint8Array(11 * 1024 * 1024));
+		const { result } = renderHook(() =>
+			useFeedback({
+				onSubmit: vi.fn().mockResolvedValue(undefined),
+				autoCapture: true,
+			}),
+		);
+
+		await autoCapture(result);
+
+		expect(result.current.error).toBeNull();
+		expect(result.current.screenshot).toBeNull();
+		expect(result.current.capturing).toBe(false);
+	});
+
+	it("attaches an automatic capture that fits, without an error", async () => {
+		captureMock.mockResolvedValue(new Uint8Array(200 * 1024));
+		const { result } = renderHook(() =>
+			useFeedback({
+				onSubmit: vi.fn().mockResolvedValue(undefined),
+				autoCapture: true,
+			}),
+		);
+
+		await autoCapture(result);
+
+		expect(result.current.error).toBeNull();
+		expect(result.current.screenshot).toEqual(new Uint8Array(200 * 1024));
+		expect(result.current.capturing).toBe(false);
+	});
+});

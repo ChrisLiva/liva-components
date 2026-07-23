@@ -1,9 +1,9 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FeedbackButton } from "@/components/feedback/feedback-button";
-import { includeInCapture } from "@/lib/feedback/capture";
+import { captureViewport, includeInCapture } from "@/lib/feedback/capture";
 
 // Base-ui-specific mechanism for the feedback dialog: the accent painting, the
 // capture-hide marker, the `lc-` utility classes, and the trigger-cloning
@@ -20,6 +20,8 @@ vi.mock("@/lib/feedback/capture", async (importActual) => ({
 	// contract test below asserts the dialog is excluded by the actual predicate.
 }));
 
+const captureMock = vi.mocked(captureViewport);
+
 /** A send that always succeeds, for the cases that are not about sending. */
 const onSubmit = () => Promise.resolve();
 
@@ -31,6 +33,10 @@ async function open(
 	await user.click(screen.getByRole("button", { name: trigger }));
 	return await screen.findByRole("dialog");
 }
+
+beforeEach(() => {
+	captureMock.mockReset();
+});
 
 // Vitest runs without globals here, so Testing Library never registers its own
 // teardown — and a dialog left mounted portals into document.body, where the
@@ -161,5 +167,21 @@ describe("FeedbackButton (base-ui skin)", () => {
 
 		const dialog = await open(user);
 		expect(dialog.querySelector('[data-slot="feedback-receipt"]')).toBeNull();
+	});
+
+	it("fires a silent auto-capture through the dialog's open-complete callback", async () => {
+		const user = userEvent.setup();
+		captureMock.mockRejectedValue(new Error("tainted canvas"));
+		render(<FeedbackButton onSubmit={onSubmit} autoCapture />);
+
+		// Base UI's onOpenChangeComplete fires in jsdom, so the armed auto-capture
+		// runs — and its failure stays silent, per the core's silent contract.
+		await open(user);
+		await waitFor(() => expect(captureMock).toHaveBeenCalled());
+
+		expect(screen.queryByRole("alert")).toBeNull();
+		expect(
+			screen.getByRole("button", { name: "Capture screenshot" }),
+		).not.toBeNull();
 	});
 });
