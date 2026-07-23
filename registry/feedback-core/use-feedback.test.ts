@@ -1,14 +1,27 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { captureViewport } from "@/lib/feedback/capture";
+import type { FeedbackReport } from "@/lib/feedback/feedback-defaults";
+import { useFeedback } from "@/lib/feedback/use-feedback";
 
-import { useSendPipeline } from "@/components/feedback/feedback-button";
-import type { FeedbackReport } from "@/components/feedback/feedback-defaults";
+// The send pipeline's behaviour — phases, the self-advancing bar, retries,
+// idempotency, the generation guards — driven through the public `useFeedback`
+// surface rather than an internal seam: the pipeline is folded in as private
+// machinery, so if a guarantee is unreachable here it is a gap in the hook's
+// surface, not a test to drop. Compose state (message, kind) is set through the
+// same setters a skin uses; a screenshot is attached through a mocked capture.
 
-const DRAFT = {
-	type: "bug",
-	message: "the sigil ate my cursor",
-	screenshotPng: null,
-};
+vi.mock("@/lib/feedback/capture", async (importActual) => ({
+	...(await importActual<typeof import("@/lib/feedback/capture")>()),
+	captureViewport: vi.fn(),
+	// The real one waits two frames; resolving straight away keeps these tests
+	// off the frame clock.
+	afterPaint: () => Promise.resolve(),
+}));
+
+const captureMock = vi.mocked(captureViewport);
+
+const MESSAGE = "the sigil ate my cursor";
 
 /** A promise plus the handles to settle it from the test body. */
 function deferred<T>() {
@@ -22,6 +35,7 @@ function deferred<T>() {
 }
 
 beforeEach(() => {
+	captureMock.mockReset();
 	// Only the clock APIs the pipeline touches: faking queueMicrotask would
 	// stall React's own act() flushing.
 	vi.useFakeTimers({
@@ -40,7 +54,24 @@ afterEach(() => {
 	vi.useRealTimers();
 });
 
-/** Let a started send() run up to its first suspension point. */
+/** Set the compose message, committing the re-render before a send reads it. */
+async function type(
+	result: { current: ReturnType<typeof useFeedback> },
+	message = MESSAGE,
+) {
+	await act(async () => {
+		result.current.setMessage(message);
+	});
+}
+
+/** Flush the microtask turns a fire-and-forget send() settles across. */
+async function settle() {
+	await act(async () => {
+		for (let i = 0; i < 6; i += 1) await Promise.resolve();
+	});
+}
+
+/** Let a started send run up to its first suspension point. */
 async function flush() {
 	await act(async () => {
 		await Promise.resolve();
@@ -54,30 +85,30 @@ async function tick(ms: number) {
 	});
 }
 
-describe("useSendPipeline", () => {
+describe("useFeedback send pipeline", () => {
 	it("starts in compose with an idle bar", () => {
 		const { result } = renderHook(() =>
-			useSendPipeline({ onSubmit: vi.fn().mockResolvedValue(undefined) }),
+			useFeedback({ onSubmit: vi.fn().mockResolvedValue(undefined) }),
 		);
 
 		expect(result.current.phase).toBe("compose");
 		expect(result.current.percent).toBe(0);
 		expect(result.current.stage).toBe("");
 		expect(result.current.error).toBeNull();
-		expect(result.current.submittedAt).toBeNull();
 	});
 
 	it("enters sending and shows the collecting stage while context is gathered", async () => {
 		const gate = deferred<string>();
 		const { result } = renderHook(() =>
-			useSendPipeline({
+			useFeedback({
 				collectContext: () => gate.promise,
 				onSubmit: vi.fn().mockResolvedValue(undefined),
 			}),
 		);
 
+		await type(result);
 		act(() => {
-			void result.current.send(DRAFT);
+			result.current.send();
 		});
 
 		expect(result.current.phase).toBe("sending");
@@ -92,8 +123,9 @@ describe("useSendPipeline", () => {
 
 	it("hands the consumer the assembled report", async () => {
 		const seen: FeedbackReport[] = [];
+		captureMock.mockResolvedValue(new Uint8Array([1, 2, 3]));
 		const { result } = renderHook(() =>
-			useSendPipeline({
+			useFeedback({
 				collectContext: () => '{"events":[]}',
 				onSubmit: async (report) => {
 					seen.push(report);
@@ -102,12 +134,17 @@ describe("useSendPipeline", () => {
 		);
 
 		await act(async () => {
-			await result.current.send({
-				type: "idea",
-				message: "more sigils",
-				screenshotPng: new Uint8Array([1, 2, 3]),
-			});
+			result.current.setKind("idea");
+			result.current.setMessage("more sigils");
 		});
+		act(() => {
+			result.current.capture();
+		});
+		await settle();
+		act(() => {
+			result.current.send();
+		});
+		await settle();
 
 		expect(seen).toHaveLength(1);
 		expect(seen[0]).toEqual({
@@ -122,11 +159,12 @@ describe("useSendPipeline", () => {
 	it("advances the bar on its own toward a ceiling it never reaches", async () => {
 		const gate = deferred<void>();
 		const { result } = renderHook(() =>
-			useSendPipeline({ onSubmit: () => gate.promise }),
+			useFeedback({ onSubmit: () => gate.promise }),
 		);
 
+		await type(result);
 		act(() => {
-			void result.current.send(DRAFT);
+			result.current.send();
 		});
 		const start = result.current.percent;
 
@@ -142,11 +180,12 @@ describe("useSendPipeline", () => {
 	it("decelerates: each equal slice of time buys less progress", async () => {
 		const gate = deferred<void>();
 		const { result } = renderHook(() =>
-			useSendPipeline({ onSubmit: () => gate.promise }),
+			useFeedback({ onSubmit: () => gate.promise }),
 		);
 
+		await type(result);
 		act(() => {
-			void result.current.send(DRAFT);
+			result.current.send();
 		});
 		const start = result.current.percent;
 
@@ -164,7 +203,7 @@ describe("useSendPipeline", () => {
 		const gate = deferred<void>();
 		let advance: ((label: string) => void) | null = null;
 		const { result } = renderHook(() =>
-			useSendPipeline({
+			useFeedback({
 				onSubmit: (_report, progress) => {
 					advance = progress;
 					return gate.promise;
@@ -172,8 +211,9 @@ describe("useSendPipeline", () => {
 			}),
 		);
 
+		await type(result);
 		act(() => {
-			void result.current.send(DRAFT);
+			result.current.send();
 		});
 		await flush();
 		const before = result.current.percent;
@@ -190,11 +230,12 @@ describe("useSendPipeline", () => {
 	it("snaps to 100, holds, then lands in sent", async () => {
 		const gate = deferred<void>();
 		const { result } = renderHook(() =>
-			useSendPipeline({ onSubmit: () => gate.promise }),
+			useFeedback({ onSubmit: () => gate.promise }),
 		);
 
+		await type(result);
 		act(() => {
-			void result.current.send(DRAFT);
+			result.current.send();
 		});
 		await act(async () => {
 			gate.resolve();
@@ -212,7 +253,7 @@ describe("useSendPipeline", () => {
 		const gate = deferred<void>();
 		let advance: ((label: string) => void) | null = null;
 		const { result } = renderHook(() =>
-			useSendPipeline({
+			useFeedback({
 				onSubmit: (_report, progress) => {
 					advance = progress;
 					return gate.promise;
@@ -220,8 +261,9 @@ describe("useSendPipeline", () => {
 			}),
 		);
 
+		await type(result);
 		act(() => {
-			void result.current.send(DRAFT);
+			result.current.send();
 		});
 		await flush();
 		await act(async () => {
@@ -244,7 +286,7 @@ describe("useSendPipeline", () => {
 		const gate = deferred<void>();
 		let advance: ((label: string) => void) | null = null;
 		const { result } = renderHook(() =>
-			useSendPipeline({
+			useFeedback({
 				onSubmit: (_report, progress) => {
 					advance = progress;
 					return gate.promise;
@@ -252,8 +294,9 @@ describe("useSendPipeline", () => {
 			}),
 		);
 
+		await type(result);
 		act(() => {
-			void result.current.send(DRAFT);
+			result.current.send();
 		});
 		await flush();
 		await act(async () => {
@@ -273,11 +316,12 @@ describe("useSendPipeline", () => {
 	it("keeps a late trickle tick from moving a finished bar", async () => {
 		const gate = deferred<void>();
 		const { result } = renderHook(() =>
-			useSendPipeline({ onSubmit: () => gate.promise }),
+			useFeedback({ onSubmit: () => gate.promise }),
 		);
 
+		await type(result);
 		act(() => {
-			void result.current.send(DRAFT);
+			result.current.send();
 		});
 		await tick(1000);
 		await act(async () => {
@@ -291,14 +335,16 @@ describe("useSendPipeline", () => {
 
 	it("drains the bar and returns to compose when onSubmit rejects", async () => {
 		const { result } = renderHook(() =>
-			useSendPipeline({
+			useFeedback({
 				onSubmit: () => Promise.reject(new Error("server said no")),
 			}),
 		);
 
-		await act(async () => {
-			await result.current.send(DRAFT);
+		await type(result);
+		act(() => {
+			result.current.send();
 		});
+		await settle();
 
 		expect(result.current.phase).toBe("compose");
 		expect(result.current.percent).toBe(0);
@@ -307,24 +353,28 @@ describe("useSendPipeline", () => {
 
 	it("falls back to a generic message for a non-Error rejection", async () => {
 		const { result } = renderHook(() =>
-			useSendPipeline({ onSubmit: () => Promise.reject("nope") }),
+			useFeedback({ onSubmit: () => Promise.reject("nope") }),
 		);
 
-		await act(async () => {
-			await result.current.send(DRAFT);
+		await type(result);
+		act(() => {
+			result.current.send();
 		});
+		await settle();
 
 		expect(result.current.error).toBe("Something went wrong. Try again.");
 	});
 
 	it("falls back to a generic message for an Error with no message", async () => {
 		const { result } = renderHook(() =>
-			useSendPipeline({ onSubmit: () => Promise.reject(new Error("")) }),
+			useFeedback({ onSubmit: () => Promise.reject(new Error("")) }),
 		);
 
-		await act(async () => {
-			await result.current.send(DRAFT);
+		await type(result);
+		act(() => {
+			result.current.send();
 		});
+		await settle();
 
 		expect(result.current.error).toBe("Something went wrong. Try again.");
 	});
@@ -339,18 +389,21 @@ describe("useSendPipeline", () => {
 			});
 		const collectContext = vi.fn(() => "{}");
 		const { result } = renderHook(() =>
-			useSendPipeline({ collectContext, onSubmit }),
+			useFeedback({ collectContext, onSubmit }),
 		);
 
-		await act(async () => {
-			await result.current.send(DRAFT);
+		await type(result);
+		act(() => {
+			result.current.send();
 		});
+		await settle();
 		expect(result.current.error).toBe("server said no");
 
 		vi.setSystemTime(new Date("2026-07-22T12:05:00.000Z"));
-		await act(async () => {
-			await result.current.send(DRAFT);
+		act(() => {
+			result.current.send();
 		});
+		await settle();
 		await tick(1000);
 
 		expect(stamps).toHaveLength(2);
@@ -364,11 +417,12 @@ describe("useSendPipeline", () => {
 	it("ignores a second send() while one is in flight", async () => {
 		const gate = deferred<void>();
 		const onSubmit = vi.fn(() => gate.promise);
-		const { result } = renderHook(() => useSendPipeline({ onSubmit }));
+		const { result } = renderHook(() => useFeedback({ onSubmit }));
 
+		await type(result);
 		act(() => {
-			void result.current.send(DRAFT);
-			void result.current.send(DRAFT);
+			result.current.send();
+			result.current.send();
 		});
 		await flush();
 
@@ -378,67 +432,72 @@ describe("useSendPipeline", () => {
 	it("ignores a send() during the completion hold", async () => {
 		const gate = deferred<void>();
 		const onSubmit = vi.fn(() => gate.promise);
-		const { result } = renderHook(() => useSendPipeline({ onSubmit }));
+		const { result } = renderHook(() => useFeedback({ onSubmit }));
 
+		await type(result);
 		act(() => {
-			void result.current.send(DRAFT);
+			result.current.send();
 		});
 		await act(async () => {
 			gate.resolve();
 		});
 		act(() => {
-			void result.current.send(DRAFT);
+			result.current.send();
 		});
 		await flush();
 
 		expect(onSubmit).toHaveBeenCalledTimes(1);
 	});
 
-	it("reset() returns to compose and re-stamps the next report", async () => {
+	it("launch() returns to compose and re-stamps the next report", async () => {
 		const stamps: number[] = [];
 		const { result } = renderHook(() =>
-			useSendPipeline({
+			useFeedback({
 				onSubmit: async (report) => {
 					stamps.push(report.submittedAt);
 				},
 			}),
 		);
 
-		await act(async () => {
-			await result.current.send(DRAFT);
+		await type(result);
+		act(() => {
+			result.current.send();
 		});
+		await settle();
 		await tick(1000);
 		expect(result.current.phase).toBe("sent");
 
 		act(() => {
-			result.current.reset();
+			result.current.launch();
 		});
 		expect(result.current.phase).toBe("compose");
 		expect(result.current.percent).toBe(0);
 		expect(result.current.stage).toBe("");
-		expect(result.current.submittedAt).toBeNull();
 
 		vi.setSystemTime(new Date("2026-07-22T12:05:00.000Z"));
-		await act(async () => {
-			await result.current.send(DRAFT);
+		await type(result);
+		act(() => {
+			result.current.send();
 		});
+		await settle();
 
 		expect(stamps).toHaveLength(2);
 		expect(stamps[1]).toBeGreaterThan(stamps[0]);
 	});
 
-	it("ignores a send that resolves after reset()", async () => {
+	it("ignores a send that resolves after launch()", async () => {
 		const gate = deferred<void>();
 		const { result } = renderHook(() =>
-			useSendPipeline({ onSubmit: () => gate.promise }),
+			useFeedback({ onSubmit: () => gate.promise }),
 		);
 
+		await type(result);
 		act(() => {
-			void result.current.send(DRAFT);
+			result.current.send();
 		});
 		await flush();
 		act(() => {
-			result.current.reset();
+			result.current.launch();
 		});
 
 		await act(async () => {
@@ -449,21 +508,21 @@ describe("useSendPipeline", () => {
 		expect(result.current.phase).toBe("compose");
 		expect(result.current.percent).toBe(0);
 		expect(result.current.stage).toBe("");
-		expect(result.current.submittedAt).toBeNull();
 	});
 
-	it("ignores a send that rejects after reset()", async () => {
+	it("ignores a send that rejects after launch()", async () => {
 		const gate = deferred<void>();
 		const { result } = renderHook(() =>
-			useSendPipeline({ onSubmit: () => gate.promise }),
+			useFeedback({ onSubmit: () => gate.promise }),
 		);
 
+		await type(result);
 		act(() => {
-			void result.current.send(DRAFT);
+			result.current.send();
 		});
 		await flush();
 		act(() => {
-			result.current.reset();
+			result.current.launch();
 		});
 
 		await act(async () => {
@@ -482,7 +541,7 @@ describe("useSendPipeline", () => {
 		const advances: ((label: string) => void)[] = [];
 		let attempt = 0;
 		const { result } = renderHook(() =>
-			useSendPipeline({
+			useFeedback({
 				onSubmit: (_report, progress) => {
 					advances.push(progress);
 					const gate = gates[attempt];
@@ -492,15 +551,17 @@ describe("useSendPipeline", () => {
 			}),
 		);
 
+		await type(result);
 		act(() => {
-			void result.current.send(DRAFT);
+			result.current.send();
 		});
 		await flush();
 		act(() => {
-			result.current.reset();
+			result.current.launch();
 		});
+		await type(result);
 		act(() => {
-			void result.current.send(DRAFT);
+			result.current.send();
 		});
 		await flush();
 		const stage = result.current.stage;
@@ -518,7 +579,7 @@ describe("useSendPipeline", () => {
 		const gates = [deferred<void>(), deferred<void>()];
 		let attempt = 0;
 		const { result } = renderHook(() =>
-			useSendPipeline({
+			useFeedback({
 				onSubmit: () => {
 					const gate = gates[attempt];
 					attempt += 1;
@@ -527,15 +588,17 @@ describe("useSendPipeline", () => {
 			}),
 		);
 
+		await type(result);
 		act(() => {
-			void result.current.send(DRAFT);
+			result.current.send();
 		});
 		await flush();
 		act(() => {
-			result.current.reset();
+			result.current.launch();
 		});
+		await type(result);
 		act(() => {
-			void result.current.send(DRAFT);
+			result.current.send();
 		});
 		await flush();
 
@@ -555,7 +618,7 @@ describe("useSendPipeline", () => {
 		const gate = deferred<void>();
 		let attempt = 0;
 		const { result } = renderHook(() =>
-			useSendPipeline({
+			useFeedback({
 				onSubmit: () => {
 					attempt += 1;
 					return attempt === 1
@@ -565,13 +628,15 @@ describe("useSendPipeline", () => {
 			}),
 		);
 
-		await act(async () => {
-			await result.current.send(DRAFT);
+		await type(result);
+		act(() => {
+			result.current.send();
 		});
+		await settle();
 		expect(result.current.error).toBe("server said no");
 
 		act(() => {
-			void result.current.send(DRAFT);
+			result.current.send();
 		});
 		expect(result.current.error).toBeNull();
 		expect(result.current.phase).toBe("sending");

@@ -19,10 +19,6 @@ import {
 	type FeedbackButtonProps,
 	type ProgressFn,
 } from "@/components/feedback/feedback-button";
-import {
-	DEFAULT_KINDS,
-	type FeedbackReport,
-} from "@/components/feedback/feedback-defaults";
 import { Button } from "@/components/ui/button";
 import {
 	collectContext,
@@ -30,6 +26,10 @@ import {
 	installDiagnostics,
 	record,
 } from "@/lib/feedback/diagnostics";
+import {
+	DEFAULT_KINDS,
+	type FeedbackReport,
+} from "@/lib/feedback/feedback-defaults";
 import { scrub } from "@/lib/feedback/scrub";
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

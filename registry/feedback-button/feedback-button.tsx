@@ -6,19 +6,8 @@ import {
 	type ReactElement,
 	type MouseEvent as ReactMouseEvent,
 	type ReactNode,
-	useCallback,
-	useEffect,
-	useRef,
-	useState,
 } from "react";
 
-import {
-	DEFAULT_COPY,
-	DEFAULT_KINDS,
-	type FeedbackCopy,
-	type FeedbackKind,
-	type FeedbackReport,
-} from "@/components/feedback/feedback-defaults";
 import { FeedbackProgress } from "@/components/feedback/feedback-progress";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,13 +20,21 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { afterPaint, captureViewport } from "@/lib/feedback/capture";
+import {
+	type FeedbackCopy,
+	type FeedbackKind,
+	type FeedbackReport,
+	formatSize,
+	type ProgressFn,
+	type UseFeedbackOptions,
+	useFeedback,
+} from "@/lib/feedback/use-feedback";
 import { cn } from "@/lib/utils";
 
-// The feedback dialog: a floating trigger, a compose form, a send with a
-// progress bar, and a confirmation. Two files sit under it — feedback-defaults
-// (copy and kinds) and feedback-progress (the bar) — and the pipeline hook at
-// the bottom of this file owns everything about the send itself.
+// The base-ui skin of the feedback flow: a floating trigger, a compose form, a
+// send with a progress bar, and a confirmation. All logic lives in the core
+// hook (`@/lib/feedback/use-feedback`); this file is markup and the base-ui/
+// shadcn primitives it binds to. Its sibling `feedback-progress` is the bar.
 //
 // Vendor this and edit it. There is no slot system and no render props on
 // purpose: the two views are named components below (ComposeView, SentView),
@@ -45,8 +42,8 @@ import { cn } from "@/lib/utils";
 //
 // Expected to change: the two views' layout, the default trigger (a plain
 // floating button — replace it wholesale with the `trigger` prop or rewrite it
-// here), MAX_SCREENSHOT_BYTES to match your transport's own limit, and LABELS,
-// which holds the handful of strings that are not part of FeedbackCopy.
+// here). All copy, including the strings this file reads off `fb.copy`, is
+// customized through the `copy` prop and DEFAULT_COPY in the core.
 //
 // Not expected to change without care:
 //   - `data-capture-hide` on the dialog popup. That marker is how
@@ -58,300 +55,12 @@ import { cn } from "@/lib/utils";
 //   - The data-slot attributes. They are the documented styling handles a
 //     consumer's own stylesheet targets from outside this file.
 
-// ── The send pipeline ────────────────────────────────────────────────────────
-
-// The send pipeline behind the feedback dialog: one hook that owns the
-// compose → sending → sent progression and everything the bar under it renders
-// from. It holds no markup, so the dialog can be restyled or rebuilt without
-// disturbing any of this.
-//
-// Expected to change: the pacing constants below (trickle interval, ceiling,
-// how far a progress() call jumps, how long 100% is held), and the shape of
-// `onSubmit` — that function is where a consumer's transport lives, and this
-// hook has no opinion about it beyond "returns a promise".
-//
-// Not expected to change: two guarantees the dialog leans on. Only the current
-// attempt may move the UI — a late progress() from a consumer's leaked request
-// cannot nudge a finished bar, and an attempt the reporter walked away from
-// cannot drag the dialog into `sent` or post an error over the report they are
-// writing now, however long its promise takes to settle. And a retry reuses the
-// first attempt's `submittedAt`, so a server that keys on it collapses the
-// resend onto one row.
-
 export type {
 	FeedbackCopy,
 	FeedbackKind,
 	FeedbackReport,
-} from "@/components/feedback/feedback-defaults";
-
-/** Where the flow is: composing a report, sending it, or done. */
-export type FeedbackPhase = "compose" | "sending" | "sent";
-
-/**
- * What the compose form owns. The pipeline supplies the other two fields of a
- * {@link FeedbackReport} — the diagnostic manifest and the submit stamp.
- */
-export type FeedbackDraft = Pick<
-	FeedbackReport,
-	"type" | "message" | "screenshotPng"
->;
-
-/**
- * Report the stage a long send has reached, e.g. `"Uploading screenshot…"`.
- * The label is shown under the bar and the bar advances toward its ceiling.
- * Calling this after the send has settled is a no-op, always.
- */
-export type ProgressFn = (label: string) => void;
-
-/** Inputs to {@link useSendPipeline}. */
-export type SendPipelineOptions = {
-	/**
-	 * Deliver the report. Rejecting returns the flow to `compose` with the
-	 * rejection's message surfaced; resolving completes the bar and lands in
-	 * `sent`. Call the supplied `progress` as often as the transport can say
-	 * something useful — a send that never calls it still animates.
-	 */
-	onSubmit: (report: FeedbackReport, progress: ProgressFn) => Promise<void>;
-	/**
-	 * Gather the diagnostic manifest that rides along, already serialized and
-	 * scrubbed. Runs at the head of every attempt (including a retry), so the
-	 * manifest describes the browser at send time. Omit to send no context.
-	 */
-	collectContext?: () => string | null | Promise<string | null>;
-	/**
-	 * Override the strings this hook produces: `collectingLabel` (the first
-	 * stage), `progressLabel` (held when the consumer never calls `progress`),
-	 * and `errorFallback` (used when a rejection carries no usable message).
-	 */
-	copy?: Partial<FeedbackCopy>;
-};
-
-/** Everything the dialog and its progress bar render from. */
-export type SendPipeline = {
-	/** Which phase the flow is in. */
-	phase: FeedbackPhase;
-	/** Bar fill, 0–100. Zero outside a send; exactly 100 once one succeeds. */
-	percent: number;
-	/** Current stage label; empty string outside a send. */
-	stage: string;
-	/** Message from the last failed attempt, or null. */
-	error: string | null;
-	/** The stamp the current report will carry, or null before the first send. */
-	submittedAt: number | null;
-	/** Run the pipeline. Ignored while a send is already in flight. */
-	send: (draft: FeedbackDraft) => Promise<void>;
-	/** Discard all send state, so the next `send` starts a fresh report. */
-	reset: () => void;
-};
-
-// Where the bar starts, so it is visible the instant a send begins.
-const START_PERCENT = 8;
-// The bar's self-driven ceiling. It approaches this asymptotically and only
-// ever reaches 100 because the send actually finished — an honest bar never
-// claims a completion it hasn't observed.
-const CEILING = 90;
-// How often the bar advances on its own.
-const TRICKLE_INTERVAL_MS = 200;
-// Each tick closes this fraction of the gap to the ceiling, which is what
-// makes the motion decelerate: constant time, shrinking distance.
-const TRICKLE_FRACTION = 0.08;
-// A progress() call is worth a visible jump — several ticks' worth.
-const STAGE_FRACTION = 0.35;
-// How long a full bar is held before the sent phase replaces it, so the
-// completion registers instead of flashing past.
-const COMPLETE_HOLD_MS = 450;
-
-/** Close `fraction` of the distance from `from` to the ceiling. */
-function toward(from: number, fraction: number): number {
-	return from + (CEILING - from) * fraction;
-}
-
-/** A rejection's own message, or the generic fallback when it hasn't one. */
-function messageFor(reason: unknown, fallback: string): string {
-	return reason instanceof Error && reason.message.trim() !== ""
-		? reason.message
-		: fallback;
-}
-
-/**
- * Own the send half of a feedback dialog: phases, a self-advancing progress
- * bar, stage labels, and errors.
- *
- * ```tsx
- * const pipeline = useSendPipeline({
- *   collectContext: () => JSON.stringify(scrub(collectContext())),
- *   onSubmit: async (report, progress) => {
- *     progress("Uploading…");
- *     await api.submitReport(report);
- *   },
- * });
- * ```
- *
- * Call `reset()` when the dialog opens: that clears the previous outcome and
- * releases the stamp, so the next send files a new report rather than
- * retrying the last one.
- */
-export function useSendPipeline(options: SendPipelineOptions): SendPipeline {
-	const [phase, setPhase] = useState<FeedbackPhase>("compose");
-	const [percent, setPercent] = useState(0);
-	const [stage, setStage] = useState("");
-	const [error, setError] = useState<string | null>(null);
-	const [submittedAt, setSubmittedAt] = useState<number | null>(null);
-
-	// Read at send time rather than captured, so `send` stays referentially
-	// stable while still seeing the caller's latest closures.
-	const optionsRef = useRef(options);
-	useEffect(() => {
-		optionsRef.current = options;
-	});
-
-	// The mechanism behind "only the current attempt may move the UI": every
-	// attempt takes a generation number, and settling — or a reset, or a later
-	// send — increments the counter. The `progress` handed to `onSubmit` and
-	// both of the attempt's own settle paths compare their captured number
-	// against the counter and do nothing once they differ, so a leaked callback
-	// or an abandoned promise is inert no matter how long it takes to arrive.
-	const generation = useRef(0);
-	// Covers the whole in-flight window, including the completion hold — a
-	// state flag would lag a synchronous double-click.
-	const busy = useRef(false);
-	const stampRef = useRef<number | null>(null);
-	const trickle = useRef<ReturnType<typeof setInterval> | null>(null);
-	const hold = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-	const stopClocks = useCallback(() => {
-		if (trickle.current !== null) clearInterval(trickle.current);
-		if (hold.current !== null) clearTimeout(hold.current);
-		trickle.current = null;
-		hold.current = null;
-	}, []);
-
-	useEffect(() => stopClocks, [stopClocks]);
-
-	const reset = useCallback(() => {
-		generation.current += 1;
-		stopClocks();
-		busy.current = false;
-		stampRef.current = null;
-		setPhase("compose");
-		setPercent(0);
-		setStage("");
-		setError(null);
-		setSubmittedAt(null);
-	}, [stopClocks]);
-
-	const send = useCallback(
-		async (draft: FeedbackDraft) => {
-			if (busy.current) return;
-			busy.current = true;
-
-			generation.current += 1;
-			const run = generation.current;
-			const copy = { ...DEFAULT_COPY, ...optionsRef.current.copy };
-
-			// Held across attempts: a retry must reach the server with the
-			// original stamp or it files a second row.
-			const stamp = stampRef.current ?? Date.now();
-			stampRef.current = stamp;
-			setSubmittedAt(stamp);
-
-			setError(null);
-			setPhase("sending");
-			setStage(copy.collectingLabel);
-			setPercent(START_PERCENT);
-
-			stopClocks();
-			const ownTrickle = setInterval(() => {
-				if (generation.current !== run) return;
-				setPercent((p) => toward(p, TRICKLE_FRACTION));
-			}, TRICKLE_INTERVAL_MS);
-			trickle.current = ownTrickle;
-
-			/**
-			 * Settle once. This run's own trickle is always cleared, whoever it
-			 * belongs to now; everything else happens only while this run is still
-			 * the current one. `false` means the run was superseded — by a reset or
-			 * a later send — and the caller must touch no state at all, or a send
-			 * the reporter walked away from redraws the dialog over the report they
-			 * are writing now.
-			 */
-			const finish = (): boolean => {
-				clearInterval(ownTrickle);
-				if (trickle.current === ownTrickle) trickle.current = null;
-				if (generation.current !== run) return false;
-				generation.current += 1;
-				stopClocks();
-				return true;
-			};
-
-			try {
-				const collect = optionsRef.current.collectContext;
-				const contextJson = collect ? await collect() : null;
-				if (generation.current === run) setStage(copy.progressLabel);
-
-				await optionsRef.current.onSubmit(
-					{ ...draft, contextJson, submittedAt: stamp },
-					(label) => {
-						if (generation.current !== run) return;
-						setStage(label);
-						setPercent((p) => toward(p, STAGE_FRACTION));
-					},
-				);
-
-				if (!finish()) return;
-				setPercent(100);
-				hold.current = setTimeout(() => {
-					busy.current = false;
-					setPhase("sent");
-				}, COMPLETE_HOLD_MS);
-			} catch (reason) {
-				if (!finish()) return;
-				busy.current = false;
-				setPercent(0);
-				setStage("");
-				setPhase("compose");
-				setError(messageFor(reason, copy.errorFallback));
-			}
-		},
-		[stopClocks],
-	);
-
-	return { phase, percent, stage, error, submittedAt, send, reset };
-}
-
-// ── The dialog ───────────────────────────────────────────────────────────────
-
-/**
- * The strings FeedbackCopy does not carry: accessible names for the two form
- * controls, the screenshot row's controls, and the two ways a capture can
- * fail. They sit here rather than in FeedbackCopy because they describe *this
- * markup* — rearrange the markup and some of them stop applying. Translate
- * them in place.
- */
-const LABELS = {
-	kindGroup: "Feedback type",
-	message: "Feedback message",
-	capturing: "Capturing…",
-	retake: "Retake screenshot",
-	discard: "Discard screenshot",
-	attached: (size: string) => `Screenshot attached (${size})`,
-	tooLarge: (size: string, limit: string) =>
-		`That capture came to ${size} — the limit is ${limit}.`,
-	captureFailed: "The page wouldn't render to an image. Send the words anyway.",
-};
-
-/**
- * Cap an attachment rather than let it fail the whole report.
- *
- * The rule: pick the largest raw PNG whose *encoded* size still clears
- * whatever your transport accepts, then set this below it. Encodings inflate —
- * base64 by about a third — and the manifest rides in the same request, so the
- * raw ceiling is meaningfully lower than the request limit. 10 MiB suits a
- * 16 MiB base64 request cap; retune it against your own server the moment you
- * know that number, because the failure it prevents is a report the reporter
- * already wrote being rejected whole.
- */
-const MAX_SCREENSHOT_BYTES = 10 * 1024 * 1024;
+	ProgressFn,
+} from "@/lib/feedback/use-feedback";
 
 /**
  * Both stops substitute the bare custom property rather than a resolved color,
@@ -370,13 +79,6 @@ const ACCENT_GRADIENT =
  * token. Restyle the dialog's rounding and change this in the same edit.
  */
 const FRAME_RADIUS = "var(--radius-4xl, 1.625rem)";
-
-/** Bytes as a short human string, for the attachment row and the size error. */
-function formatSize(bytes: number): string {
-	return bytes >= 1024 * 1024
-		? `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-		: `${Math.max(1, Math.round(bytes / 1024))} KB`;
-}
 
 /** Every class hook the dialog exposes, one per structural node. */
 export type FeedbackButtonClassNames = {
@@ -429,7 +131,7 @@ export type FeedbackButtonProps = {
 	 * deliberately depends on no diagnostics collector, so what a report carries
 	 * is entirely yours to decide here.
 	 */
-	collectContext?: SendPipelineOptions["collectContext"];
+	collectContext?: UseFeedbackOptions["collectContext"];
 	/**
 	 * Capture the page automatically when the dialog opens, so the reporter has
 	 * an attachment without asking for one. Failures are silent — see the note
@@ -605,7 +307,7 @@ export function ComposeView({
 					variant="outline"
 					spacing={0}
 					disabled={sending}
-					aria-label={LABELS.kindGroup}
+					aria-label={copy.kindGroupLabel}
 					className={classNames.kinds}
 				>
 					{kinds.map((option) => (
@@ -625,7 +327,7 @@ export function ComposeView({
 				// decides which control in it starts with the focus, and the dialog
 				// exists to be typed into.
 				autoFocus
-				aria-label={LABELS.message}
+				aria-label={copy.messageLabel}
 				placeholder={kind.placeholder}
 				className={cn("min-h-28 leading-relaxed", classNames.textarea)}
 			/>
@@ -647,7 +349,7 @@ export function ComposeView({
 						disabled={capturing || sending}
 					>
 						<Camera className="size-4" />
-						{capturing ? LABELS.capturing : copy.captureLabel}
+						{capturing ? copy.capturingLabel : copy.captureLabel}
 					</Button>
 				) : (
 					<div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -661,13 +363,13 @@ export function ComposeView({
 							/>
 						)}
 						<span className="truncate">
-							{LABELS.attached(formatSize(screenshot.length))}
+							{copy.attached(formatSize(screenshot.length))}
 						</span>
 						<Button
 							type="button"
 							variant="ghost"
 							size="icon-sm"
-							aria-label={LABELS.retake}
+							aria-label={copy.retakeLabel}
 							onClick={onCapture}
 							disabled={capturing || sending}
 						>
@@ -677,7 +379,7 @@ export function ComposeView({
 							type="button"
 							variant="ghost"
 							size="icon-sm"
-							aria-label={LABELS.discard}
+							aria-label={copy.discardLabel}
 							onClick={onDiscard}
 							disabled={sending}
 						>
@@ -812,144 +514,20 @@ export function FeedbackButton({
 	onSubmit,
 	collectContext,
 	autoCapture = false,
-	kinds = DEFAULT_KINDS,
+	kinds,
 	copy: copyOverrides,
 	icon = "✦",
 	trigger,
 	className,
 	classNames = {},
 }: FeedbackButtonProps) {
-	const copy = { ...DEFAULT_COPY, ...copyOverrides };
-	// An empty list would leave the dialog with nothing to file under, so it
-	// falls back rather than rendering a form that cannot produce a report.
-	const options = kinds.length > 0 ? kinds : DEFAULT_KINDS;
-
-	const [open, setOpen] = useState(false);
-	const [type, setType] = useState(options[0].value);
-	const [message, setMessage] = useState("");
-	const [screenshot, setScreenshot] = useState<Uint8Array | null>(null);
-	const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
-	const [capturing, setCapturing] = useState(false);
-	// An auto-capture waiting for the dialog to finish opening. A ref, not state:
-	// nothing renders from it, and it is read inside a Base UI callback.
-	const armed = useRef(false);
-	const [captureError, setCaptureError] = useState<string | null>(null);
-	// The generation guard for `capture`, the one async path left in the
-	// component: every open and every close bumps the counter, and a capture
-	// captures it at the top and drops its result if it no longer matches — so a
-	// clone that resolves after the reporter closed or reopened the dialog can't
-	// attach a screenshot of the wrong page, or an error, onto a fresh form.
-	const captureRun = useRef(0);
-
-	const pipeline = useSendPipeline({ onSubmit, collectContext, copy });
-
-	const kind = options.find((option) => option.value === type) ?? options[0];
-
-	// The preview is a blob URL that has to be released, so it is derived here
-	// rather than built inline. Absent createObjectURL — a non-browser render
-	// target — the attachment row simply has no thumbnail.
-	useEffect(() => {
-		if (screenshot === null || typeof URL.createObjectURL !== "function") {
-			setScreenshotUrl(null);
-			return;
-		}
-		// The cast is the DOM lib's SharedArrayBuffer caveat, not a real
-		// mismatch: captureViewport only ever returns a plain, non-shared view.
-		const url = URL.createObjectURL(
-			new Blob([screenshot as BlobPart], { type: "image/png" }),
-		);
-		setScreenshotUrl(url);
-		return () => {
-			URL.revokeObjectURL(url);
-		};
-	}, [screenshot]);
-
-	/**
-	 * Attach the page behind the dialog.
-	 *
-	 * `silent` is the whole difference between the two ways this is reached, and
-	 * the asymmetry is deliberate. A manual capture is something the reporter
-	 * asked for and is waiting on, so a failure has to be said out loud. An
-	 * automatic one they never asked for; an error about it would be the first
-	 * thing they read in a dialog they opened to write a sentence, about a
-	 * nicety, when the manual button sitting right there is the retry. So the
-	 * automatic path swallows both failure modes — a render that throws and a
-	 * capture over the size cap — and leaves the form as if it had never run.
-	 */
-	const capture = useCallback(async (silent: boolean) => {
-		// Captured before the await; the clone can outlive the dialog it was taken
-		// for, and a `run` that no longer matches means the reporter has moved on.
-		const run = captureRun.current;
-		const current = () => captureRun.current === run;
-		if (!silent) setCaptureError(null);
-		setCapturing(true);
-		try {
-			const bytes = await captureViewport();
-			if (!current()) return;
-			if (bytes.length > MAX_SCREENSHOT_BYTES) {
-				if (!silent) {
-					setCaptureError(
-						LABELS.tooLarge(
-							formatSize(bytes.length),
-							formatSize(MAX_SCREENSHOT_BYTES),
-						),
-					);
-				}
-				return;
-			}
-			setScreenshot(bytes);
-		} catch {
-			if (current() && !silent) setCaptureError(LABELS.captureFailed);
-		} finally {
-			if (current()) setCapturing(false);
-		}
-	}, []);
-
-	/** Open onto an empty form; the next send stamps a fresh report. */
-	function launch() {
-		pipeline.reset();
-		// Retires any capture still in flight from a prior open, so its result
-		// can't land on the fresh form this opens onto.
-		captureRun.current += 1;
-		setType(options[0].value);
-		setMessage("");
-		setScreenshot(null);
-		setCapturing(false);
-		setCaptureError(null);
-		setOpen(true);
-		// Armed here, fired from onOpenChangeComplete once the dialog has finished
-		// animating open. The clone blocks the main thread for as long as it runs,
-		// so starting it in this tick freezes the dialog's own enter animation and
-		// the open reads as a stall — deferring by a frame is not enough, because
-		// the animation spans many. `capturing` is still set synchronously, so the
-		// footer reads as pending from the first frame rather than flashing the
-		// attach button and swapping.
-		if (autoCapture) {
-			armed.current = true;
-			setCapturing(true);
-		}
-	}
-
-	/**
-	 * Run the armed auto-capture, now that nothing is animating for it to block.
-	 *
-	 * `afterPaint` buys one more frame so the animation's last frame is on screen
-	 * before the main thread goes away, and — the reason it is a raced timeout
-	 * rather than a bare rAF — settles even if the tab is hidden by now, which
-	 * would otherwise pause frame callbacks and strand the capture forever.
-	 */
-	function onOpenComplete(isOpen: boolean) {
-		if (!isOpen || !armed.current) return;
-		armed.current = false;
-		void afterPaint().then(() => capture(true));
-	}
-
-	function send() {
-		setCaptureError(null);
-		void pipeline.send({ type, message, screenshotPng: screenshot });
-	}
-
-	const sending = pipeline.phase === "sending";
+	const fb = useFeedback({
+		onSubmit,
+		collectContext,
+		autoCapture,
+		kinds,
+		copy: copyOverrides,
+	});
 
 	return (
 		<>
@@ -959,7 +537,7 @@ export function FeedbackButton({
 					type="button"
 					variant="outline"
 					size="lg"
-					onClick={launch}
+					onClick={fb.launch}
 					className={cn(
 						"fixed bottom-4 left-4 z-40 gap-2 bg-background shadow-lg",
 						classNames.trigger,
@@ -974,22 +552,16 @@ export function FeedbackButton({
 					{/* The button's whole accessible name: the glyph beside it is
 					    aria-hidden, so nothing else contributes. Falls back to the
 					    dialog heading, which is right whenever the two match. */}
-					{copy.triggerLabel ?? copy.title}
+					{fb.copy.triggerLabel ?? fb.copy.title}
 				</Button>
 			) : (
-				withOpenHandler(trigger, launch, classNames.trigger)
+				withOpenHandler(trigger, fb.launch, classNames.trigger)
 			)}
 
 			<Dialog
-				open={open}
-				onOpenChange={(next) => {
-					// Every dismissal — Escape, the overlay, the Cancel button — passes
-					// through here, so it is the one place to retire a capture still in
-					// flight before it can attach to whatever the dialog shows next.
-					if (!next) captureRun.current += 1;
-					setOpen(next);
-				}}
-				onOpenChangeComplete={onOpenComplete}
+				open={fb.open}
+				onOpenChange={fb.setOpen}
+				onOpenChangeComplete={fb.notifyOpenComplete}
 			>
 				<DialogContent
 					data-slot="feedback-content"
@@ -1003,34 +575,34 @@ export function FeedbackButton({
 					)}
 					style={
 						{
-							...(kind.accent === undefined
+							...(fb.kind.accent === undefined
 								? null
-								: { "--lc-accent": kind.accent }),
+								: { "--lc-accent": fb.kind.accent }),
 							"--lc-accent-gradient": ACCENT_GRADIENT,
 							"--lc-frame-radius": FRAME_RADIUS,
 						} as CSSProperties
 					}
 				>
-					{pipeline.phase === "sent" ? (
-						<SentView copy={copy} icon={icon} classNames={classNames} />
+					{fb.phase === "sent" ? (
+						<SentView copy={fb.copy} icon={icon} classNames={classNames} />
 					) : (
 						<ComposeView
-							copy={copy}
-							kinds={options}
-							kind={kind}
-							onKindChange={setType}
-							message={message}
-							onMessageChange={setMessage}
-							screenshot={screenshot}
-							screenshotUrl={screenshotUrl}
-							capturing={capturing}
-							onCapture={() => void capture(false)}
-							onDiscard={() => setScreenshot(null)}
-							error={captureError ?? pipeline.error}
-							sending={sending}
-							percent={pipeline.percent}
-							stage={pipeline.stage}
-							onSend={send}
+							copy={fb.copy}
+							kinds={fb.kinds}
+							kind={fb.kind}
+							onKindChange={fb.setKind}
+							message={fb.message}
+							onMessageChange={fb.setMessage}
+							screenshot={fb.screenshot}
+							screenshotUrl={fb.screenshotUrl}
+							capturing={fb.capturing}
+							onCapture={fb.capture}
+							onDiscard={fb.discardScreenshot}
+							error={fb.error}
+							sending={fb.sending}
+							percent={fb.percent}
+							stage={fb.stage}
+							onSend={fb.send}
 							classNames={classNames}
 						/>
 					)}

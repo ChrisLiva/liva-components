@@ -86,14 +86,19 @@
           "target": "@components/feedback/feedback-progress.tsx"
         },
         {
-          "path": "registry/feedback-button/feedback-defaults.ts",
-          "type": "registry:component",
-          "target": "@components/feedback/feedback-defaults.ts"
+          "path": "registry/feedback-core/use-feedback.ts",
+          "type": "registry:lib",
+          "target": "@lib/feedback/use-feedback.ts"
         },
         {
-          "path": "registry/feedback-button/feedback-button.test.tsx",
-          "type": "registry:component",
-          "target": "@components/feedback/feedback-button.test.tsx"
+          "path": "registry/feedback-core/feedback-defaults.ts",
+          "type": "registry:lib",
+          "target": "@lib/feedback/feedback-defaults.ts"
+        },
+        {
+          "path": "registry/feedback-core/use-feedback.test.ts",
+          "type": "registry:lib",
+          "target": "@lib/feedback/use-feedback.test.ts"
         },
         {
           "path": "registry/feedback-button/feedback-button.dialog.test.tsx",

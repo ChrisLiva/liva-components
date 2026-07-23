@@ -65,9 +65,11 @@ export type FeedbackKind = {
  * Three fields are more than a string, because the markup they land in is the
  * consumer's to shape: `title` takes any node, `receipt` takes a node-returning
  * function, and `triggerLabel` splits the floating button's wording off from
- * the dialog heading. The rest are plain strings and are meant to stay that
- * way — they land in places (a `<Button>`'s label, an `aria-label`) where a
- * node buys nothing.
+ * the dialog heading. Two more — `attached` and `tooLarge` — are functions
+ * only because they interpolate a formatted byte size the flow computes; they
+ * still return plain strings. The rest are plain strings and are meant to stay
+ * that way — they land in places (a `<Button>`'s label, an `aria-label`) where
+ * a node buys nothing.
  */
 export type FeedbackCopy = {
 	/**
@@ -93,6 +95,22 @@ export type FeedbackCopy = {
 	triggerLabel?: string;
 	/** Button that attaches a screenshot. */
 	captureLabel: string;
+	/** Shown on the capture control while a capture is in flight. */
+	capturingLabel: string;
+	/** Accessible name for the control that replaces an attachment. */
+	retakeLabel: string;
+	/** Accessible name for the control that drops an attachment. */
+	discardLabel: string;
+	/** Line naming the attached capture and its size, e.g. `"Screenshot attached (200 KB)"`. */
+	attached: (size: string) => string;
+	/** Shown when a capture clears rendering but exceeds the size cap. */
+	tooLarge: (size: string, limit: string) => string;
+	/** Shown when the page will not render to an image at all. */
+	captureFailed: string;
+	/** Accessible name for the kind toggle group. */
+	kindGroupLabel: string;
+	/** Accessible name for the message field. */
+	messageLabel: string;
 	/** Button that dismisses the dialog. */
 	cancelLabel: string;
 	/** Button that starts the send pipeline. */
@@ -171,6 +189,15 @@ export const DEFAULT_COPY: FeedbackCopy = {
 	 */
 	description: "Tell us what's on your mind.",
 	captureLabel: "Capture screenshot",
+	capturingLabel: "Capturing…",
+	retakeLabel: "Retake screenshot",
+	discardLabel: "Discard screenshot",
+	attached: (size) => `Screenshot attached (${size})`,
+	tooLarge: (size, limit) =>
+		`That capture came to ${size} — the limit is ${limit}.`,
+	captureFailed: "The page wouldn't render to an image. Send the words anyway.",
+	kindGroupLabel: "Feedback type",
+	messageLabel: "Feedback message",
 	cancelLabel: "Cancel",
 	sendLabel: "Send",
 	sentTitle: "Feedback sent",

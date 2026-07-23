@@ -16,6 +16,10 @@
        * import needs rewriting on the way out.
        */
       "@/components/feedback/*": ["./registry/feedback-button/*"],
+      "@/lib/feedback/use-feedback": ["./registry/feedback-core/use-feedback"],
+      "@/lib/feedback/feedback-defaults": [
+        "./registry/feedback-core/feedback-defaults"
+      ],
       "@/lib/feedback/capture": ["./registry/screenshot-capture/capture"],
       "@/lib/feedback/diagnostics": ["./registry/diagnostics/diagnostics"],
       "@/lib/feedback/scrub": ["./registry/scrub/scrub"],
